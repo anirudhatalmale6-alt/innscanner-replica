@@ -31,6 +31,27 @@ atrPeriod = input.int(5, "ATR Period", minval=1, maxval=100,
 src       = input.source(close, "Source", group="Signal Settings")
 
 // ============================================================================
+// TIME FILTER INPUTS
+// ============================================================================
+// Filter signals by day of week and hour of day (UTC).
+// When enabled, signals only fire within the allowed days and hours.
+
+enableTimeFilter = input.bool(false, "Enable Time Filter", group="Time Filter",
+     tooltip="When enabled, signals only fire during the configured days and hours.")
+filterMonday    = input.bool(true, "Monday", group="Time Filter")
+filterTuesday   = input.bool(true, "Tuesday", group="Time Filter")
+filterWednesday = input.bool(true, "Wednesday", group="Time Filter")
+filterThursday  = input.bool(true, "Thursday", group="Time Filter")
+filterFriday    = input.bool(false, "Friday", group="Time Filter")
+filterSaturday  = input.bool(false, "Saturday", group="Time Filter")
+filterSunday    = input.bool(false, "Sunday", group="Time Filter")
+
+startHour = input.int(8, "Start Hour (UTC)", minval=0, maxval=23, group="Time Filter",
+     tooltip="Signals allowed from this hour (inclusive). Uses exchange timezone.")
+endHour   = input.int(20, "End Hour (UTC)", minval=0, maxval=23, group="Time Filter",
+     tooltip="Signals allowed until this hour (exclusive). Uses exchange timezone.")
+
+// ============================================================================
 // SL / TP METHOD INPUTS
 // ============================================================================
 
@@ -120,8 +141,30 @@ pos := src[1] < nz(xATRTrailingStop[1], 0) and src > xATRTrailingStop ? 1 :
      src[1] > nz(xATRTrailingStop[1], 0) and src < xATRTrailingStop ? -1 : nz(pos[1], 0)
 
 // Signal detection (no repainting - based on closed bar data)
-buySignal  = pos == 1 and pos[1] != 1
-sellSignal = pos == -1 and pos[1] != -1
+rawBuySignal  = pos == 1 and pos[1] != 1
+rawSellSignal = pos == -1 and pos[1] != -1
+
+// --- Time Filter ---
+// dayofweek: 1=Sunday, 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday
+dayAllowed = not enableTimeFilter or
+     (dayofweek == dayofweek.monday    and filterMonday)    or
+     (dayofweek == dayofweek.tuesday   and filterTuesday)   or
+     (dayofweek == dayofweek.wednesday and filterWednesday)  or
+     (dayofweek == dayofweek.thursday  and filterThursday)   or
+     (dayofweek == dayofweek.friday    and filterFriday)     or
+     (dayofweek == dayofweek.saturday  and filterSaturday)   or
+     (dayofweek == dayofweek.sunday    and filterSunday)
+
+// Hour filter: supports both normal ranges (8-20) and overnight ranges (20-8)
+hourOK = not enableTimeFilter or
+     (startHour < endHour  ? (hour >= startHour and hour < endHour) :
+      startHour > endHour  ? (hour >= startHour or hour < endHour)  :
+      true)
+
+timeAllowed = dayAllowed and hourOK
+
+buySignal  = rawBuySignal  and timeAllowed
+sellSignal = rawSellSignal and timeAllowed
 
 // ============================================================================
 // EMA CALCULATIONS

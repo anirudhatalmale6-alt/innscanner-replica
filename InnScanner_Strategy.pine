@@ -1,0 +1,370 @@
+// This Pine Script(TM) v6 strategy replicates the InnScanner ATR-based Buy/Sell signals
+// and adds configurable TP/SL management for backtesting.
+//
+// FEATURES:
+// - ATR trailing stop signals (same as Phase 1 indicator, no repainting)
+// - Multiple SL methods: ATR-based, percentage, fixed points, recent swing
+// - Multiple TP methods: ATR-based, R:R ratio, percentage, fixed points, recent swing
+// - Dual TP mode: TP1 moves SL to breakeven, TP2 is the profit target
+// - Signal strength rating (0-5)
+// - Full alert payload with all trade data
+//
+// NO REPAINTING: All signals are evaluated on confirmed (closed) bars only.
+//   calc_on_every_tick=false ensures the strategy only processes on bar close.
+
+//@version=6
+strategy("InnScanner Strategy", overlay=true, calc_on_every_tick=false,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     initial_capital=10000, commission_type=strategy.commission.percent,
+     commission_value=0.05, slippage=2, max_labels_count=500,
+     process_orders_on_close=false)
+
+// ============================================================================
+// SIGNAL INPUTS
+// ============================================================================
+
+keyValue  = input.float(3.0, "Key Value (Sensitivity)", minval=0.5, maxval=20, step=0.5,
+     group="Signal Settings",
+     tooltip="ATR multiplier for trailing stop distance. Higher = fewer signals, lower = more signals.")
+atrPeriod = input.int(5, "ATR Period", minval=1, maxval=100,
+     group="Signal Settings")
+src       = input.source(close, "Source", group="Signal Settings")
+
+// ============================================================================
+// SL / TP METHOD INPUTS
+// ============================================================================
+
+// --- Stop Loss Method ---
+slMethod = input.string("ATR", "Stop Loss Method",
+     options=["ATR", "Percentage", "Fixed Points", "Recent Swing"],
+     group="Stop Loss",
+     tooltip="ATR: uses ATR * multiplier. Percentage: % of entry price. Fixed Points: absolute distance. Recent Swing: nearest swing high/low.")
+slATRMult    = input.float(1.5, "SL ATR Multiplier", minval=0.1, maxval=10, step=0.1,
+     group="Stop Loss", tooltip="Used when SL Method = ATR")
+slPercent    = input.float(1.0, "SL Percentage (%)", minval=0.1, maxval=20, step=0.1,
+     group="Stop Loss", tooltip="Used when SL Method = Percentage")
+slFixedPts   = input.float(50, "SL Fixed Points", minval=1, step=1,
+     group="Stop Loss", tooltip="Used when SL Method = Fixed Points")
+slSwingLen   = input.int(10, "SL Swing Lookback", minval=3, maxval=100,
+     group="Stop Loss", tooltip="Bars to look back for swing high/low when SL Method = Recent Swing")
+
+// --- Take Profit Mode ---
+tpMode = input.string("Single TP", "TP Mode",
+     options=["Single TP", "Dual TP (TP1 Breakeven + TP2 Profit)"],
+     group="Take Profit")
+
+// --- Take Profit Method ---
+tpMethod = input.string("R:R Ratio", "Take Profit Method",
+     options=["ATR", "R:R Ratio", "Percentage", "Fixed Points", "Recent Swing"],
+     group="Take Profit",
+     tooltip="R:R Ratio: TP = SL distance * ratio. ATR: uses ATR * multiplier.")
+tpATRMult    = input.float(3.0, "TP ATR Multiplier", minval=0.1, maxval=20, step=0.1,
+     group="Take Profit", tooltip="Used when TP Method = ATR")
+tpRR         = input.float(2.0, "TP Risk:Reward Ratio", minval=0.5, maxval=10, step=0.1,
+     group="Take Profit", tooltip="Used when TP Method = R:R Ratio. TP distance = SL distance * this value")
+tpPercent    = input.float(2.0, "TP Percentage (%)", minval=0.1, maxval=50, step=0.1,
+     group="Take Profit", tooltip="Used when TP Method = Percentage")
+tpFixedPts   = input.float(100, "TP Fixed Points", minval=1, step=1,
+     group="Take Profit", tooltip="Used when TP Method = Fixed Points")
+tpSwingLen   = input.int(10, "TP Swing Lookback", minval=3, maxval=100,
+     group="Take Profit", tooltip="Bars to look back for swing high/low when TP Method = Recent Swing")
+
+// --- Dual TP Settings ---
+tp1Ratio = input.float(1.0, "TP1 (Breakeven) R:R Ratio", minval=0.1, maxval=10, step=0.1,
+     group="Dual TP Settings",
+     tooltip="When Dual TP mode is active, TP1 triggers breakeven. Distance = SL distance * this ratio.")
+tp1ClosePercent = input.float(50, "% Position to Close at TP1", minval=10, maxval=90, step=5,
+     group="Dual TP Settings",
+     tooltip="Percentage of position closed when TP1 is hit. Rest runs to TP2.")
+
+// --- Breakeven Settings ---
+bePadding = input.float(0, "Breakeven Padding (points)", minval=0, step=1,
+     group="Dual TP Settings",
+     tooltip="Extra points above entry for breakeven SL (covers commission/slippage). 0 = exact entry.")
+
+// ============================================================================
+// EMA INPUTS
+// ============================================================================
+
+enableEMA50  = input.bool(true, "Enable 50 EMA", group="EMAs")
+enableEMA200 = input.bool(true, "Enable 200 EMA", group="EMAs")
+ema50Len     = input.int(50, "50 EMA Length", minval=1, group="EMAs")
+ema200Len    = input.int(200, "200 EMA Length", minval=1, group="EMAs")
+
+// ============================================================================
+// DISPLAY INPUTS
+// ============================================================================
+
+showLabels     = input.bool(true, "Show Buy/Sell Labels", group="Display")
+showSLTPLines  = input.bool(true, "Show SL/TP Lines on Chart", group="Display")
+showStrength   = input.bool(true, "Show Strength on Labels", group="Display")
+
+// ============================================================================
+// ATR TRAILING STOP CALCULATION (same as Phase 1 - no repainting)
+// ============================================================================
+
+xATR  = ta.atr(atrPeriod)
+nLoss = keyValue * xATR
+
+var float xATRTrailingStop = na
+xATRTrailingStop := nz(xATRTrailingStop[1], 0) == 0 ? src - nLoss :
+     src > nz(xATRTrailingStop[1], 0) and src[1] > nz(xATRTrailingStop[1], 0) ?
+         math.max(nz(xATRTrailingStop[1]), src - nLoss) :
+     src < nz(xATRTrailingStop[1], 0) and src[1] < nz(xATRTrailingStop[1], 0) ?
+         math.min(nz(xATRTrailingStop[1]), src + nLoss) :
+     src > nz(xATRTrailingStop[1], 0) ? src - nLoss : src + nLoss
+
+// Position tracking
+var int pos = 0
+pos := src[1] < nz(xATRTrailingStop[1], 0) and src > xATRTrailingStop ? 1 :
+     src[1] > nz(xATRTrailingStop[1], 0) and src < xATRTrailingStop ? -1 : nz(pos[1], 0)
+
+// Signal detection (no repainting - based on closed bar data)
+buySignal  = pos == 1 and pos[1] != 1
+sellSignal = pos == -1 and pos[1] != -1
+
+// ============================================================================
+// EMA CALCULATIONS
+// ============================================================================
+
+ema50  = ta.ema(src, ema50Len)
+ema200 = ta.ema(src, ema200Len)
+
+// ============================================================================
+// SIGNAL STRENGTH (0-5)
+// ============================================================================
+// Strength is a composite score based on multiple confluence factors.
+// Each factor adds 1 point to the score. You can adjust the logic here.
+//
+// Factors for BUY strength:
+//   1. Price above 50 EMA (short-term trend aligned)
+//   2. Price above 200 EMA (long-term trend aligned)
+//   3. 50 EMA above 200 EMA (golden cross / bullish structure)
+//   4. Current candle is bullish (close > open) - momentum confirmation
+//   5. ATR is increasing vs previous bar (volatility expansion)
+//
+// Factors for SELL strength: mirror of above (below EMAs, bearish candle, etc.)
+
+calcStrength(isBuy) =>
+    score = 0
+    if isBuy
+        score += (src > ema50)  ? 1 : 0   // Price above 50 EMA
+        score += (src > ema200) ? 1 : 0   // Price above 200 EMA
+        score += (ema50 > ema200) ? 1 : 0 // Bullish EMA alignment
+        score += (close > open) ? 1 : 0   // Bullish candle
+        score += (xATR > xATR[1]) ? 1 : 0 // Volatility expansion
+    else
+        score += (src < ema50)  ? 1 : 0   // Price below 50 EMA
+        score += (src < ema200) ? 1 : 0   // Price below 200 EMA
+        score += (ema50 < ema200) ? 1 : 0 // Bearish EMA alignment
+        score += (close < open) ? 1 : 0   // Bearish candle
+        score += (xATR > xATR[1]) ? 1 : 0 // Volatility expansion
+    score
+
+buyStrength  = buySignal  ? calcStrength(true)  : 0
+sellStrength = sellSignal ? calcStrength(false) : 0
+
+// ============================================================================
+// SL CALCULATION
+// ============================================================================
+
+// Find recent swing high/low for swing-based SL/TP
+swingLow  = ta.lowest(low, slSwingLen)
+swingHigh = ta.highest(high, slSwingLen)
+tpSwingLow  = ta.lowest(low, tpSwingLen)
+tpSwingHigh = ta.highest(high, tpSwingLen)
+
+calcSL(isLong, entryPrice) =>
+    float sl = na
+    if slMethod == "ATR"
+        sl := isLong ? entryPrice - slATRMult * xATR : entryPrice + slATRMult * xATR
+    else if slMethod == "Percentage"
+        sl := isLong ? entryPrice * (1 - slPercent / 100) : entryPrice * (1 + slPercent / 100)
+    else if slMethod == "Fixed Points"
+        sl := isLong ? entryPrice - slFixedPts * syminfo.mintick : entryPrice + slFixedPts * syminfo.mintick
+    else if slMethod == "Recent Swing"
+        sl := isLong ? swingLow : swingHigh
+    sl
+
+// ============================================================================
+// TP CALCULATION
+// ============================================================================
+
+calcTP(isLong, entryPrice, slPrice) =>
+    float slDist = math.abs(entryPrice - slPrice)
+    float tp = na
+    if tpMethod == "ATR"
+        tp := isLong ? entryPrice + tpATRMult * xATR : entryPrice - tpATRMult * xATR
+    else if tpMethod == "R:R Ratio"
+        tp := isLong ? entryPrice + slDist * tpRR : entryPrice - slDist * tpRR
+    else if tpMethod == "Percentage"
+        tp := isLong ? entryPrice * (1 + tpPercent / 100) : entryPrice * (1 - tpPercent / 100)
+    else if tpMethod == "Fixed Points"
+        tp := isLong ? entryPrice + tpFixedPts * syminfo.mintick : entryPrice - tpFixedPts * syminfo.mintick
+    else if tpMethod == "Recent Swing"
+        tp := isLong ? tpSwingHigh : tpSwingLow
+    tp
+
+calcTP1(isLong, entryPrice, slPrice) =>
+    float slDist = math.abs(entryPrice - slPrice)
+    isLong ? entryPrice + slDist * tp1Ratio : entryPrice - slDist * tp1Ratio
+
+// ============================================================================
+// STRATEGY EXECUTION
+// ============================================================================
+
+var float entrySL  = na
+var float entryTP  = na
+var float entryTP1 = na
+var bool  tp1Hit   = false
+var float entryPrice = na
+
+// Track if we're in a position
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+
+// --- BUY SIGNAL ---
+if buySignal
+    entryPrice := close
+    entrySL    := calcSL(true, close)
+    entryTP    := calcTP(true, close, calcSL(true, close))
+    entryTP1   := tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" ? calcTP1(true, close, calcSL(true, close)) : na
+    tp1Hit     := false
+
+    if inShort
+        strategy.close("Short", comment="Close Short")
+
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long SL/TP", "Long", stop=entrySL, limit=entryTP)
+
+// --- SELL SIGNAL ---
+if sellSignal
+    entryPrice := close
+    entrySL    := calcSL(false, close)
+    entryTP    := calcTP(false, close, calcSL(false, close))
+    entryTP1   := tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" ? calcTP1(false, close, calcSL(false, close)) : na
+    tp1Hit     := false
+
+    if inLong
+        strategy.close("Long", comment="Close Long")
+
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short SL/TP", "Short", stop=entrySL, limit=entryTP)
+
+// --- DUAL TP: Move SL to breakeven when TP1 is hit ---
+if tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" and not tp1Hit
+    if inLong and not na(entryTP1) and high >= entryTP1
+        tp1Hit  := true
+        beSL    = entryPrice + bePadding * syminfo.mintick
+        // Close partial position at TP1
+        strategy.close("Long", comment="TP1 Hit - Partial Close", qty_percent=tp1ClosePercent)
+        // Move SL to breakeven for remaining position
+        strategy.exit("Long BE/TP2", "Long", stop=beSL, limit=entryTP)
+
+    if inShort and not na(entryTP1) and low <= entryTP1
+        tp1Hit  := true
+        beSL    = entryPrice - bePadding * syminfo.mintick
+        strategy.close("Short", comment="TP1 Hit - Partial Close", qty_percent=tp1ClosePercent)
+        strategy.exit("Short BE/TP2", "Short", stop=beSL, limit=entryTP)
+
+// ============================================================================
+// PLOTTING
+// ============================================================================
+
+// --- EMA Lines ---
+plot(enableEMA50 ? ema50 : na, "50 EMA", color=color.new(color.blue, 0), linewidth=1)
+plot(enableEMA200 ? ema200 : na, "200 EMA", color=color.new(color.orange, 0), linewidth=1)
+
+// --- SL / TP Lines ---
+slColor  = color.new(color.red, 30)
+tpColor  = color.new(color.green, 30)
+tp1Color = color.new(color.yellow, 30)
+
+plot(showSLTPLines and (inLong or inShort) ? entrySL : na, "Stop Loss",
+     color=slColor, linewidth=2, style=plot.style_linebr)
+plot(showSLTPLines and (inLong or inShort) ? entryTP : na, "Take Profit",
+     color=tpColor, linewidth=2, style=plot.style_linebr)
+plot(showSLTPLines and (inLong or inShort) and tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" ? entryTP1 : na,
+     "TP1 (Breakeven Level)", color=tp1Color, linewidth=1, style=plot.style_linebr)
+
+// --- Buy / Sell Labels with Strength ---
+buyLabelText  = showStrength and buySignal  ? "Buy [" + str.tostring(buyStrength)  + "/5]" : "Buy"
+sellLabelText = showStrength and sellSignal ? "Sell [" + str.tostring(sellStrength) + "/5]" : "Sell"
+
+// Use dynamic labels (label.new) so we can include the strength score in the text
+if showLabels and buySignal
+    label.new(bar_index, low, buyLabelText,
+         style=label.style_label_up, color=color.new(#26a69a, 0),
+         textcolor=color.white, size=size.small)
+
+if showLabels and sellSignal
+    label.new(bar_index, high, sellLabelText,
+         style=label.style_label_down, color=color.new(#ef5350, 0),
+         textcolor=color.white, size=size.small)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+// Build alert message with all trade data
+// Format: SIGNAL | Ticker | Timeframe | Strength | Entry | SL | TP | TP1
+buyMsg = "BUY | " + syminfo.ticker + " | " + timeframe.period +
+     " | Strength: " + str.tostring(buyStrength) + "/5" +
+     " | Entry: " + str.tostring(close, format.mintick) +
+     " | SL: " + str.tostring(calcSL(true, close), format.mintick) +
+     " | TP: " + str.tostring(calcTP(true, close, calcSL(true, close)), format.mintick) +
+     (tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" ?
+         " | TP1: " + str.tostring(calcTP1(true, close, calcSL(true, close)), format.mintick) : "")
+
+sellMsg = "SELL | " + syminfo.ticker + " | " + timeframe.period +
+     " | Strength: " + str.tostring(sellStrength) + "/5" +
+     " | Entry: " + str.tostring(close, format.mintick) +
+     " | SL: " + str.tostring(calcSL(false, close), format.mintick) +
+     " | TP: " + str.tostring(calcTP(false, close, calcSL(false, close)), format.mintick) +
+     (tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" ?
+         " | TP1: " + str.tostring(calcTP1(false, close, calcSL(false, close)), format.mintick) : "")
+
+alertcondition(buySignal, "Buy Signal", "{{plot_0}}")
+alertcondition(sellSignal, "Sell Signal", "{{plot_0}}")
+
+// Use strategy alerts for full message (strategy.entry triggers alert automatically)
+// The alert message can be customized when setting up the alert in TradingView.
+// Recommended alert message template:
+// {{strategy.order.action}} | {{ticker}} | {{interval}} | Entry: {{strategy.order.price}}
+
+// ============================================================================
+// INFO TABLE (shows current signal strength and SL/TP on chart)
+// ============================================================================
+
+var table infoTable = table.new(position.top_right, 2, 6, bgcolor=color.new(color.black, 80),
+     border_color=color.gray, border_width=1)
+
+if barstate.islast
+    lastSignal = pos == 1 ? "LONG" : pos == -1 ? "SHORT" : "FLAT"
+    lastStrength = pos == 1 ? buyStrength : sellStrength
+
+    table.cell(infoTable, 0, 0, "Position", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 0, lastSignal,
+         text_color=pos == 1 ? color.green : pos == -1 ? color.red : color.gray,
+         text_size=size.small)
+
+    table.cell(infoTable, 0, 1, "Strength", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 1, str.tostring(lastStrength) + " / 5",
+         text_color=color.yellow, text_size=size.small)
+
+    table.cell(infoTable, 0, 2, "Entry", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 2, not na(entryPrice) ? str.tostring(entryPrice, format.mintick) : "-",
+         text_color=color.white, text_size=size.small)
+
+    table.cell(infoTable, 0, 3, "Stop Loss", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 3, not na(entrySL) ? str.tostring(entrySL, format.mintick) : "-",
+         text_color=color.red, text_size=size.small)
+
+    table.cell(infoTable, 0, 4, "Take Profit", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 4, not na(entryTP) ? str.tostring(entryTP, format.mintick) : "-",
+         text_color=color.green, text_size=size.small)
+
+    tp1Text = tpMode == "Dual TP (TP1 Breakeven + TP2 Profit)" and not na(entryTP1) ?
+         str.tostring(entryTP1, format.mintick) + (tp1Hit ? " (HIT)" : "") : "-"
+    table.cell(infoTable, 0, 5, "TP1 (BE)", text_color=color.white, text_size=size.small)
+    table.cell(infoTable, 1, 5, tp1Text, text_color=color.yellow, text_size=size.small)

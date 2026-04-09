@@ -52,6 +52,15 @@ endHour   = input.int(20, "End Hour (UTC)", minval=0, maxval=23, group="Time Fil
      tooltip="Signals allowed until this hour (exclusive). Uses exchange timezone.")
 
 // ============================================================================
+// STRENGTH FILTER INPUTS
+// ============================================================================
+// Only take signals that meet a minimum strength threshold.
+
+minStrength = input.int(0, "Minimum Signal Strength", minval=0, maxval=5,
+     group="Strength Filter",
+     tooltip="Only signals with strength >= this value will be taken. Set to 0 to disable (take all signals).")
+
+// ============================================================================
 // SL / TP METHOD INPUTS
 // ============================================================================
 
@@ -163,8 +172,8 @@ hourOK = not enableTimeFilter or
 
 timeAllowed = dayAllowed and hourOK
 
-buySignal  = rawBuySignal  and timeAllowed
-sellSignal = rawSellSignal and timeAllowed
+timeBuySignal  = rawBuySignal  and timeAllowed
+timeSellSignal = rawSellSignal and timeAllowed
 
 // ============================================================================
 // EMA CALCULATIONS
@@ -204,8 +213,13 @@ calcStrength(isBuy) =>
         score += (xATR > xATR[1]) ? 1 : 0 // Volatility expansion
     score
 
-buyStrength  = buySignal  ? calcStrength(true)  : 0
-sellStrength = sellSignal ? calcStrength(false) : 0
+buyStrength  = timeBuySignal  ? calcStrength(true)  : 0
+sellStrength = timeSellSignal ? calcStrength(false) : 0
+
+// --- Strength Filter ---
+// Only take signals that meet the minimum strength threshold
+buySignal  = timeBuySignal  and buyStrength  >= minStrength
+sellSignal = timeSellSignal and sellStrength >= minStrength
 
 // ============================================================================
 // SL CALCULATION

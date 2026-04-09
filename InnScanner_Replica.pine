@@ -1,0 +1,134 @@
+// This Pine Script(TM) v6 indicator replicates the InnScanner ATR-based Buy/Sell signal system.
+// It uses an ATR trailing stop mechanism: when price crosses above the trailing stop, a Buy signal
+// is generated; when price crosses below, a Sell signal is generated.
+//
+// Phase 1: Signal parity with InnScanner (ATR trailing stop + optional EMA filters)
+// Phase 2 (planned): Strength rating (0-100), dynamic SL/TP levels, enhanced alert payloads
+//
+// Core logic: UT Bot Alert variant
+// - ATR is calculated over a configurable period (default 5)
+// - A trailing stop is computed using ATR * Key Value (sensitivity multiplier, default 3)
+// - Buy/Sell signals fire on crossovers/crossunders of close vs trailing stop
+// - Optional 50 EMA and 200 EMA overlays for trend context
+
+//@version=6
+indicator("InnScanner Replica", overlay=true, max_labels_count=500)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+
+// --- Signal Settings ---
+// "Key Value" controls the sensitivity of the trailing stop.
+// Higher values = wider trailing stop = fewer but more reliable signals.
+// Lower values = tighter trailing stop = more frequent signals.
+keyValue = input.float(3.0, title="Key Value (Sensitivity)", minval=0.5, maxval=20, step=0.5,
+     tooltip="Multiplier for ATR to set trailing stop distance. InnScanner default: 3")
+
+// ATR period for volatility measurement
+atrPeriod = input.int(5, title="ATR Period", minval=1, maxval=100,
+     tooltip="Period for Average True Range calculation. InnScanner default: 5")
+
+// Source price for signal calculation
+src = input.source(close, title="Source")
+
+// --- EMA Settings ---
+enableEMA50  = input.bool(true, title="Enable 50 EMA")
+enableEMA200 = input.bool(true, title="Enable 200 EMA")
+ema50Len     = input.int(50, title="50 EMA Length", minval=1)
+ema200Len    = input.int(200, title="200 EMA Length", minval=1)
+
+// --- Display Settings ---
+showBuyLabels  = input.bool(true, title="Show Buy Signals")
+showSellLabels = input.bool(true, title="Show Sell Signals")
+showTrailingStop = input.bool(false, title="Show Trailing Stop Line",
+     tooltip="Display the ATR trailing stop line on chart (hidden by default to match InnScanner)")
+
+// ============================================================================
+// ATR TRAILING STOP CALCULATION
+// ============================================================================
+
+// Calculate ATR using RMA (same as ta.atr)
+xATR = ta.atr(atrPeriod)
+
+// The trailing stop loss distance
+nLoss = keyValue * xATR
+
+// ATR Trailing Stop logic:
+// - For an uptrend: trailing stop follows price upward, never moves down
+// - For a downtrend: trailing stop follows price downward, never moves up
+// - When price crosses the trailing stop, direction flips
+
+// Initialize trailing stop
+var float xATRTrailingStop = na
+
+// Calculate the trailing stop based on previous values and current price
+// This is the core UT Bot / ATR Trailing Stop algorithm
+xATRTrailingStop := nz(xATRTrailingStop[1], 0) == 0 ? src - nLoss :
+     src > nz(xATRTrailingStop[1], 0) and src[1] > nz(xATRTrailingStop[1], 0) ?
+         math.max(nz(xATRTrailingStop[1]), src - nLoss) :
+     src < nz(xATRTrailingStop[1], 0) and src[1] < nz(xATRTrailingStop[1], 0) ?
+         math.min(nz(xATRTrailingStop[1]), src + nLoss) :
+     src > nz(xATRTrailingStop[1], 0) ? src - nLoss : src + nLoss
+
+// ============================================================================
+// POSITION TRACKING
+// ============================================================================
+
+// Track position state: 1 = long, -1 = short
+// Position flips when price crosses the trailing stop
+var int pos = 0
+pos := src[1] < nz(xATRTrailingStop[1], 0) and src > xATRTrailingStop ? 1 :
+     src[1] > nz(xATRTrailingStop[1], 0) and src < xATRTrailingStop ? -1 : nz(pos[1], 0)
+
+// ============================================================================
+// BUY / SELL SIGNAL DETECTION
+// ============================================================================
+
+// Buy signal: position flips from short/neutral to long
+buySignal = pos == 1 and pos[1] != 1
+
+// Sell signal: position flips from long/neutral to short
+sellSignal = pos == -1 and pos[1] != -1
+
+// ============================================================================
+// PLOTTING
+// ============================================================================
+
+// --- Trailing Stop Line (optional, hidden by default to match InnScanner) ---
+stopColor = pos == 1 ? color.green : color.red
+plot(showTrailingStop ? xATRTrailingStop : na, title="ATR Trailing Stop",
+     color=stopColor, linewidth=2, style=plot.style_line)
+
+// --- EMA Lines (enabled but hidden in Style tab to match InnScanner default) ---
+ema50  = ta.ema(src, ema50Len)
+ema200 = ta.ema(src, ema200Len)
+plot(enableEMA50 ? ema50 : na, title="50 EMA", color=color.new(color.blue, 0), linewidth=1)
+plot(enableEMA200 ? ema200 : na, title="200 EMA", color=color.new(color.orange, 0), linewidth=1)
+
+// --- Buy / Sell Signal Labels ---
+// These match the InnScanner style: green "Buy" below bar, red "Sell" above bar
+plotshape(showBuyLabels and buySignal, title="Buy ATR Signal",
+     text="Buy", textcolor=color.white,
+     style=shape.labelup, location=location.belowbar,
+     color=color.new(#26a69a, 0), size=size.small)
+
+plotshape(showSellLabels and sellSignal, title="Sell ATR Signal",
+     text="Sell", textcolor=color.white,
+     style=shape.labeldown, location=location.abovebar,
+     color=color.new(#ef5350, 0), size=size.small)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+// Alert conditions for TradingView alert system
+alertcondition(buySignal, title="Buy Signal", message="InnScanner Replica - BUY Signal on {{ticker}} ({{interval}})")
+alertcondition(sellSignal, title="Sell Signal", message="InnScanner Replica - SELL Signal on {{ticker}} ({{interval}})")
+alertcondition(buySignal or sellSignal, title="Any Signal", message="InnScanner Replica - {{ticker}} ({{interval}}) Signal fired")
+
+// ============================================================================
+// BAR COLORING (optional, disabled by default)
+// ============================================================================
+
+barcolor(pos == 1 ? color.new(#26a69a, 80) : pos == -1 ? color.new(#ef5350, 80) : na, title="Bar Color")

@@ -150,9 +150,7 @@ if inSession
 // SETUP DETECTION (on session end)
 // ============================================================================
 
-// Direction is determined by which extreme formed LAST in the session:
-//   - Low formed after High → price dropped late → expect reversal UP → LONG
-//   - High formed after Low → price rose late → expect reversal DOWN → SHORT
+// Direction: close below midpoint → LONG (reversal from low), above → SHORT
 
 var float setupHigh       = na
 var float setupLow        = na
@@ -183,7 +181,7 @@ if sessionEnd
     bool maxOK = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
     bool rangeOK = minOK and maxOK and setupsToday < maxSetupsPerDay
     if rangeOK
-        setupIsLong := lowBar > highBar
+        setupIsLong := close < rangeMid
         setupsToday += 1
 
         if setupIsLong

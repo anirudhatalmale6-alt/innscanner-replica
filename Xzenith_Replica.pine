@@ -59,6 +59,21 @@ invalidationBuffer = input.float(0.001, "Invalidation Buffer (%)", minval=0, max
      group="Levels",
      tooltip="Extra distance beyond the swing extreme for the Invalidation Level, as % of price. 0.001 = 0.1%")
 
+// ============================================================================
+// RANGE FILTER INPUTS
+// ============================================================================
+// The original Xzenith doesn't create a setup for every session.
+// These filters control which session ranges qualify as valid setups.
+
+minRangeATR = input.float(1.5, "Min Range (x ATR)", minval=0, maxval=10, step=0.1,
+     group="Range Filter",
+     tooltip="Session range must be at least this many times the ATR to generate a setup. Set to 0 to disable. Higher = fewer setups, only significant ranges.")
+filterATRPeriod = input.int(14, "Filter ATR Period", minval=1, maxval=100,
+     group="Range Filter")
+maxSetupsPerDay = input.int(1, "Max Setups Per Day", minval=1, maxval=5,
+     group="Range Filter",
+     tooltip="Maximum number of setups to show per day. The original Xzenith typically shows 1 per day.")
+
 target1Fib = input.float(0.272, "Target 1 Extension", minval=0.05, maxval=5.0, step=0.01,
      group="Targets",
      tooltip="Fibonacci extension beyond the range. For LONG: projected above the High. For SHORT: projected below the Low. Default 0.272 = -27.2% extension.")
@@ -103,17 +118,27 @@ sessionEnd   = not inSession and wasInSession
 bgcolor(showSessionBG and inSession ? sessionBGColor : na, title="Session Background")
 
 // ============================================================================
+// FILTER ATR CALCULATION
+// ============================================================================
+
+filterATR = ta.atr(filterATRPeriod)
+
+// ============================================================================
 // SESSION RANGE TRACKING
 // ============================================================================
 
 var float sessionHigh   = na
 var float sessionLow    = na
 var int   sessionStartBar = na
+var int   setupsToday   = 0
 
 if sessionStart
     sessionHigh    := high
     sessionLow     := low
     sessionStartBar := bar_index
+
+if sessionStart
+    setupsToday := 0
 
 if inSession
     sessionHigh := math.max(nz(sessionHigh, high), high)
@@ -160,9 +185,11 @@ if sessionEnd
     float rangeMid = (sessionHigh + sessionLow) / 2
     float rangeSize = sessionHigh - sessionLow
 
-    // Skip tiny ranges (noise)
-    if rangeSize > syminfo.mintick * 10
+    // Range must exceed minimum ATR threshold and daily setup limit
+    bool rangeOK = (minRangeATR == 0 or rangeSize >= filterATR * minRangeATR) and setupsToday < maxSetupsPerDay
+    if rangeOK
         setupIsLong := close < rangeMid
+        setupsToday += 1
 
         if setupIsLong
             // LONG: Golden Window near the Low, targets as extensions ABOVE the High

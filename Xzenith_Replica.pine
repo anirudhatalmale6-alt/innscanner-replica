@@ -61,12 +61,15 @@ invalidationFib = input.float(0.414, "Invalidation Distance (Fib)", minval=0.05,
 
 minRangeATR = input.float(1.5, "Min Range (x ATR)", minval=0, maxval=10, step=0.1,
      group="Range Filter",
-     tooltip="Session range must be at least this many times the ATR to generate a setup. Set to 0 to disable. Higher = fewer setups, only significant ranges.")
+     tooltip="Session range must be at least this many times the ATR to generate a setup. Set to 0 to disable.")
+maxRangeATR = input.float(5.0, "Max Range (x ATR)", minval=0, maxval=20, step=0.5,
+     group="Range Filter",
+     tooltip="Session range must be smaller than this many times the ATR. Set to 0 to disable. Filters out abnormally large ranges.")
 filterATRPeriod = input.int(14, "Filter ATR Period", minval=1, maxval=100,
      group="Range Filter")
 maxSetupsPerDay = input.int(1, "Max Setups Per Day", minval=1, maxval=5,
      group="Range Filter",
-     tooltip="Maximum number of setups to show per day. The original Xzenith typically shows 1 per day.")
+     tooltip="Maximum number of setups to show per day.")
 
 targetStart = input.float(0.786, "Target Start (Fib from extreme)", minval=0.1, maxval=3.0, step=0.01,
      group="Targets",
@@ -177,7 +180,9 @@ if sessionEnd
     float rangeSize = sessionHigh - sessionLow
 
     // Range must exceed minimum ATR threshold and daily setup limit
-    bool rangeOK = (minRangeATR == 0 or rangeSize >= filterATR * minRangeATR) and setupsToday < maxSetupsPerDay
+    bool minOK = minRangeATR == 0 or rangeSize >= filterATR * minRangeATR
+    bool maxOK = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
+    bool rangeOK = minOK and maxOK and setupsToday < maxSetupsPerDay
     if rangeOK
         setupIsLong := close < rangeMid
         setupsToday += 1

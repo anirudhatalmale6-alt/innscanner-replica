@@ -125,35 +125,34 @@ var float sessionHigh   = na
 var float sessionLow    = na
 var int   sessionStartBar = na
 var int   setupsToday   = 0
+var int   highBar        = na
+var int   lowBar         = na
 
 if sessionStart
     sessionHigh    := high
     sessionLow     := low
     sessionStartBar := bar_index
+    highBar        := bar_index
+    lowBar         := bar_index
 
 if sessionStart
     setupsToday := 0
 
 if inSession
-    sessionHigh := math.max(nz(sessionHigh, high), high)
-    sessionLow  := math.min(nz(sessionLow, low), low)
+    if high > nz(sessionHigh, high)
+        sessionHigh := high
+        highBar     := bar_index
+    if low < nz(sessionLow, low)
+        sessionLow := low
+        lowBar     := bar_index
 
 // ============================================================================
 // SETUP DETECTION (on session end)
 // ============================================================================
 
-// Determine bias based on where price closed relative to the session range
-// Close in upper half → bullish bias (price wants to continue up) → but Xzenith
-// seems to detect reversal setups, so we look at the breakout direction AFTER session.
-//
-// From the screenshots:
-// - LONG setups: price dropped to a Low, Golden Window near the Low → expecting reversal UP
-// - SHORT setups: price rose to a High, Golden Window near the High → expecting reversal DOWN
-//
-// The direction seems to be determined by whether the session ended with a clear swing.
-// For v1: Use close position relative to range midpoint.
-//   - Close below midpoint → LONG setup (expecting reversal from low)
-//   - Close above midpoint → SHORT setup (expecting reversal from high)
+// Direction is determined by which extreme formed LAST in the session:
+//   - Low formed after High → price dropped late → expect reversal UP → LONG
+//   - High formed after Low → price rose late → expect reversal DOWN → SHORT
 
 var float setupHigh       = na
 var float setupLow        = na
@@ -184,7 +183,7 @@ if sessionEnd
     bool maxOK = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
     bool rangeOK = minOK and maxOK and setupsToday < maxSetupsPerDay
     if rangeOK
-        setupIsLong := close < rangeMid
+        setupIsLong := lowBar > highBar
         setupsToday += 1
 
         if setupIsLong

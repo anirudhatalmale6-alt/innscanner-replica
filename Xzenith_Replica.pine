@@ -1,0 +1,256 @@
+// Xzenith Replica - Session-based swing range indicator
+// Identifies a trading session range (High/Low), then plots:
+//   - Golden Window: entry zone near the range extreme
+//   - Invalidation Level: stop loss beyond the extreme
+//   - Target Interest 1, 2, 3: profit targets projected from the range
+//
+// Direction logic:
+//   - If price breaks below the session range and reverses → LONG setup
+//   - If price breaks above the session range and reverses → SHORT setup
+//
+// No repainting: all levels are calculated after the session closes.
+
+//@version=6
+indicator("Xzenith Replica", overlay=true, max_boxes_count=500,
+     max_lines_count=500, max_labels_count=500)
+
+// ============================================================================
+// SESSION INPUTS
+// ============================================================================
+
+sessionType = input.string("Asian", "Session", options=["Asian", "London", "New York", "Custom"],
+     group="Session",
+     tooltip="Which session to use for range detection.")
+
+customStart = input.session("0000-0800", "Custom Session Time (Exchange TZ)",
+     group="Session",
+     tooltip="Only used when Session = Custom. Format: HHMM-HHMM in exchange timezone.")
+
+sessionTZ = input.string("America/New_York", "Exchange Timezone",
+     options=["America/New_York", "Europe/London", "Asia/Tokyo", "Asia/Hong_Kong",
+              "Australia/Sydney", "UTC"],
+     group="Session")
+
+showSessionBG = input.bool(true, "Show Session Background", group="Session")
+sessionBGColor = input.color(color.new(color.blue, 90), "Session Background Color", group="Session")
+
+// ============================================================================
+// RANGE & TARGET INPUTS
+// ============================================================================
+
+pivotLookback = input.int(10, "Swing Detection Lookback", minval=3, maxval=50,
+     group="Range Detection",
+     tooltip="Bars to look back for confirming swing highs/lows within the session.")
+
+gwMethod = input.string("OTE Zone (0.618-0.786)", "Golden Window Method",
+     options=["OTE Zone (0.618-0.786)", "Order Block (last opposing candle)",
+              "Fixed Retracement"],
+     group="Golden Window",
+     tooltip="How to calculate the Golden Window entry zone.")
+
+gwRetraceLow = input.float(0.618, "GW Retracement Low", minval=0.1, maxval=0.95, step=0.01,
+     group="Golden Window",
+     tooltip="Lower Fibonacci level for Golden Window (used in OTE and Fixed Retracement modes).")
+gwRetraceHigh = input.float(0.786, "GW Retracement High", minval=0.1, maxval=0.99, step=0.01,
+     group="Golden Window",
+     tooltip="Upper Fibonacci level for Golden Window.")
+
+invalidationBuffer = input.float(0.005, "Invalidation Buffer (%)", minval=0, maxval=0.05, step=0.001,
+     group="Levels",
+     tooltip="Extra distance beyond the swing extreme for the Invalidation Level, as % of price.")
+
+target1Fib = input.float(0.236, "Target 1 Fibonacci Level", minval=0.05, maxval=2.0, step=0.01,
+     group="Targets",
+     tooltip="Fibonacci retracement level from Low to High for Target 1.")
+target2Fib = input.float(0.382, "Target 2 Fibonacci Level", minval=0.05, maxval=3.0, step=0.01,
+     group="Targets",
+     tooltip="Fibonacci retracement level from Low to High for Target 2.")
+target3Fib = input.float(0.500, "Target 3 Fibonacci Level", minval=0.05, maxval=5.0, step=0.01,
+     group="Targets",
+     tooltip="Fibonacci retracement level from Low to High for Target 3.")
+
+// ============================================================================
+// DISPLAY INPUTS
+// ============================================================================
+
+showHighLow    = input.bool(true, "Show High/Low Labels", group="Display")
+showGoldenWin  = input.bool(true, "Show Golden Window Box", group="Display")
+showInvalid    = input.bool(true, "Show Invalidation Level", group="Display")
+showTargets    = input.bool(true, "Show Target Interest Lines", group="Display")
+
+gwColor        = input.color(color.new(#b8960c, 40), "Golden Window Color", group="Colors")
+invalidColor   = input.color(color.new(color.red, 20), "Invalidation Level Color", group="Colors")
+targetColor    = input.color(color.new(color.green, 20), "Target Lines Color", group="Colors")
+highLowColor   = input.color(color.new(color.blue, 20), "High/Low Lines Color", group="Colors")
+
+// ============================================================================
+// SESSION TIME CALCULATION
+// ============================================================================
+
+sessionStr = switch sessionType
+    "Asian"    => "0000-0800"
+    "London"   => "0800-1200"
+    "New York" => "1200-1700"
+    "Custom"   => customStart
+
+inSession = not na(time(timeframe.period, sessionStr, sessionTZ))
+wasInSession = not na(time(timeframe.period, sessionStr, sessionTZ))[1]
+
+sessionStart = inSession and not wasInSession
+sessionEnd   = not inSession and wasInSession
+
+// Session background
+bgcolor(showSessionBG and inSession ? sessionBGColor : na, title="Session Background")
+
+// ============================================================================
+// SESSION RANGE TRACKING
+// ============================================================================
+
+var float sessionHigh   = na
+var float sessionLow    = na
+var int   sessionStartBar = na
+
+if sessionStart
+    sessionHigh    := high
+    sessionLow     := low
+    sessionStartBar := bar_index
+
+if inSession
+    sessionHigh := math.max(nz(sessionHigh, high), high)
+    sessionLow  := math.min(nz(sessionLow, low), low)
+
+// ============================================================================
+// SETUP DETECTION (on session end)
+// ============================================================================
+
+// Determine bias based on where price closed relative to the session range
+// Close in upper half → bullish bias (price wants to continue up) → but Xzenith
+// seems to detect reversal setups, so we look at the breakout direction AFTER session.
+//
+// From the screenshots:
+// - LONG setups: price dropped to a Low, Golden Window near the Low → expecting reversal UP
+// - SHORT setups: price rose to a High, Golden Window near the High → expecting reversal DOWN
+//
+// The direction seems to be determined by whether the session ended with a clear swing.
+// For v1: Use close position relative to range midpoint.
+//   - Close below midpoint → LONG setup (expecting reversal from low)
+//   - Close above midpoint → SHORT setup (expecting reversal from high)
+
+var float setupHigh       = na
+var float setupLow        = na
+var int   setupBar        = na
+var int   setupEndBar     = na
+var bool  setupIsLong     = na
+var float gwTop           = na
+var float gwBottom        = na
+var float invalidLevel    = na
+var float tgt1            = na
+var float tgt2            = na
+var float tgt3            = na
+var bool  newSetup        = false
+
+newSetup := false
+
+if sessionEnd
+    setupHigh    := sessionHigh
+    setupLow     := sessionLow
+    setupBar     := nz(sessionStartBar, bar_index - 1)
+    setupEndBar  := bar_index
+
+    float rangeMid = (sessionHigh + sessionLow) / 2
+    float rangeSize = sessionHigh - sessionLow
+
+    // Skip tiny ranges (noise)
+    if rangeSize > syminfo.mintick * 10
+        setupIsLong := close < rangeMid
+
+        if setupIsLong
+            // LONG: Golden Window near the Low, targets above
+            gwBottom    := setupLow + rangeSize * (1 - gwRetraceHigh)
+            gwTop       := setupLow + rangeSize * (1 - gwRetraceLow)
+            invalidLevel := setupLow * (1 - invalidationBuffer)
+            tgt1        := setupLow + rangeSize * target1Fib
+            tgt2        := setupLow + rangeSize * target2Fib
+            tgt3        := setupLow + rangeSize * target3Fib
+        else
+            // SHORT: Golden Window near the High, targets below
+            gwTop       := setupHigh - rangeSize * (1 - gwRetraceHigh)
+            gwBottom    := setupHigh - rangeSize * (1 - gwRetraceLow)
+            invalidLevel := setupHigh * (1 + invalidationBuffer)
+            tgt1        := setupHigh - rangeSize * target1Fib
+            tgt2        := setupHigh - rangeSize * target2Fib
+            tgt3        := setupHigh - rangeSize * target3Fib
+
+        newSetup := true
+
+// ============================================================================
+// PLOTTING SETUP ELEMENTS
+// ============================================================================
+
+// Extend lines to the right by this many bars
+lineExtend = 100
+
+if newSetup
+    // --- High / Low Lines and Labels ---
+    if showHighLow
+        line.new(setupBar, setupHigh, bar_index + lineExtend, setupHigh,
+             color=highLowColor, width=1, style=line.style_solid)
+        line.new(setupBar, setupLow, bar_index + lineExtend, setupLow,
+             color=highLowColor, width=1, style=line.style_solid)
+        label.new(setupBar, setupHigh, "High: " + str.tostring(setupHigh, format.mintick),
+             style=label.style_label_down, color=color.new(color.gray, 40),
+             textcolor=color.white, size=size.normal)
+        label.new(setupBar, setupLow, "Low: " + str.tostring(setupLow, format.mintick),
+             style=label.style_label_up, color=color.new(color.gray, 40),
+             textcolor=color.white, size=size.normal)
+
+    // --- Golden Window Box ---
+    if showGoldenWin
+        box.new(setupBar, gwTop, setupEndBar, gwBottom,
+             bgcolor=gwColor, border_color=color.new(#d4a017, 0), border_width=1)
+        label.new(math.round(math.avg(setupBar, setupEndBar)), math.avg(gwTop, gwBottom),
+             "GOLDEN WINDOW",
+             style=label.style_none, textcolor=color.new(color.white, 40), size=size.normal)
+
+    // --- Invalidation Level ---
+    if showInvalid
+        line.new(setupEndBar, invalidLevel, bar_index + lineExtend, invalidLevel,
+             color=invalidColor, width=2, style=line.style_solid)
+        label.new(bar_index + 20, invalidLevel, "INVALIDATION LEVEL",
+             style=label.style_label_down, color=invalidColor,
+             textcolor=color.white, size=size.small)
+
+    // --- Target Interest Lines ---
+    if showTargets
+        line.new(setupEndBar, tgt1, bar_index + lineExtend, tgt1,
+             color=targetColor, width=1, style=line.style_solid)
+        label.new(bar_index + 20, tgt1, "TARGET INTEREST 1",
+             style=label.style_label_down, color=targetColor,
+             textcolor=color.white, size=size.small)
+
+        line.new(setupEndBar, tgt2, bar_index + lineExtend, tgt2,
+             color=targetColor, width=1, style=line.style_solid)
+        label.new(bar_index + 20, tgt2, "TARGET INTEREST 2",
+             style=label.style_label_down, color=targetColor,
+             textcolor=color.white, size=size.small)
+
+        line.new(setupEndBar, tgt3, bar_index + lineExtend, tgt3,
+             color=targetColor, width=1, style=line.style_solid)
+        label.new(bar_index + 20, tgt3, "TARGET INTEREST 3",
+             style=label.style_label_down, color=targetColor,
+             textcolor=color.white, size=size.small)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertcondition(newSetup and setupIsLong, "Long Setup Detected",
+     "Xzenith LONG Setup on {{ticker}} ({{interval}}) | High: {{plot_0}} | Low: {{plot_1}}")
+alertcondition(newSetup and not setupIsLong, "Short Setup Detected",
+     "Xzenith SHORT Setup on {{ticker}} ({{interval}}) | High: {{plot_0}} | Low: {{plot_1}}")
+alertcondition(newSetup, "Any Setup Detected",
+     "Xzenith Setup on {{ticker}} ({{interval}})")
+
+// Hidden plots for alert message values
+plot(setupHigh, "Setup High", display=display.none)
+plot(setupLow, "Setup Low", display=display.none)

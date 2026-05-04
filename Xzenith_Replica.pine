@@ -123,14 +123,12 @@ filterATR = ta.atr(filterATRPeriod)
 
 var float sessionHigh   = na
 var float sessionLow    = na
-var float sessionOpen   = na
 var int   sessionStartBar = na
 var int   setupsToday   = 0
 
 if sessionStart
     sessionHigh    := high
     sessionLow     := low
-    sessionOpen    := open
     sessionStartBar := bar_index
 
 if sessionStart
@@ -144,7 +142,8 @@ if inSession
 // SETUP DETECTION (on session end)
 // ============================================================================
 
-// Direction: bearish session (close < session open) → LONG, bullish → SHORT
+// Direction: session closed below range midpoint → LONG, above → SHORT
+// Uses close[1] (last bar in session) since sessionEnd fires on the first post-session bar
 
 var float setupHigh       = na
 var float setupLow        = na
@@ -168,13 +167,14 @@ if sessionEnd
     setupEndBar  := bar_index
 
     float rangeSize = sessionHigh - sessionLow
+    float rangeMid  = (sessionHigh + sessionLow) / 2
 
     // Range must exceed minimum ATR threshold and daily setup limit
     bool minOK = minRangeATR == 0 or rangeSize >= filterATR * minRangeATR
     bool maxOK = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
     bool rangeOK = minOK and maxOK and setupsToday < maxSetupsPerDay
     if rangeOK
-        setupIsLong := close < nz(sessionOpen, close)
+        setupIsLong := close[1] < rangeMid
         setupsToday += 1
 
         if setupIsLong

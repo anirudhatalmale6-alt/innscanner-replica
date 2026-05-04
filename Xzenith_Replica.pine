@@ -48,26 +48,26 @@ gwMethod = input.string("OTE Zone (0.618-0.786)", "Golden Window Method",
      group="Golden Window",
      tooltip="How to calculate the Golden Window entry zone.")
 
-gwRetraceLow = input.float(0.618, "GW Retracement Low", minval=0.1, maxval=0.95, step=0.01,
+gwRetraceLow = input.float(0.786, "GW Retracement Low", minval=0.1, maxval=0.95, step=0.01,
      group="Golden Window",
-     tooltip="Lower Fibonacci level for Golden Window (used in OTE and Fixed Retracement modes).")
-gwRetraceHigh = input.float(0.786, "GW Retracement High", minval=0.1, maxval=0.99, step=0.01,
+     tooltip="Lower Fibonacci retracement level for Golden Window. Measured from the High for longs.")
+gwRetraceHigh = input.float(0.886, "GW Retracement High", minval=0.1, maxval=0.99, step=0.01,
      group="Golden Window",
-     tooltip="Upper Fibonacci level for Golden Window.")
+     tooltip="Upper Fibonacci retracement level for Golden Window. Deeper = closer to the swing extreme.")
 
-invalidationBuffer = input.float(0.005, "Invalidation Buffer (%)", minval=0, maxval=0.05, step=0.001,
+invalidationBuffer = input.float(0.001, "Invalidation Buffer (%)", minval=0, maxval=0.05, step=0.001,
      group="Levels",
-     tooltip="Extra distance beyond the swing extreme for the Invalidation Level, as % of price.")
+     tooltip="Extra distance beyond the swing extreme for the Invalidation Level, as % of price. 0.001 = 0.1%")
 
-target1Fib = input.float(0.236, "Target 1 Fibonacci Level", minval=0.05, maxval=2.0, step=0.01,
+target1Fib = input.float(0.382, "Target 1 Fibonacci Level", minval=0.05, maxval=2.0, step=0.01,
      group="Targets",
-     tooltip="Fibonacci retracement level from Low to High for Target 1.")
-target2Fib = input.float(0.382, "Target 2 Fibonacci Level", minval=0.05, maxval=3.0, step=0.01,
+     tooltip="Fibonacci level of the range for Target 1. Measured from the entry side (Low for longs, High for shorts).")
+target2Fib = input.float(0.500, "Target 2 Fibonacci Level", minval=0.05, maxval=3.0, step=0.01,
      group="Targets",
-     tooltip="Fibonacci retracement level from Low to High for Target 2.")
-target3Fib = input.float(0.500, "Target 3 Fibonacci Level", minval=0.05, maxval=5.0, step=0.01,
+     tooltip="Fibonacci level of the range for Target 2.")
+target3Fib = input.float(0.707, "Target 3 Fibonacci Level", minval=0.05, maxval=5.0, step=0.01,
      group="Targets",
-     tooltip="Fibonacci retracement level from Low to High for Target 3.")
+     tooltip="Fibonacci level of the range for Target 3.")
 
 // ============================================================================
 // DISPLAY INPUTS

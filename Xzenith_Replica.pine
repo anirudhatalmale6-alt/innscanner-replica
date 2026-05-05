@@ -1,10 +1,10 @@
-// Xzenith Replica - Session-based swing range indicator (LONG only)
+// Xzenith Replica - Session-based swing range indicator
 // Identifies a trading session range (High/Low), then plots:
 //   - Entry Level: exact entry price (midpoint of Golden Window zone)
-//   - Invalidation Level: stop loss below the Low
-//   - Target Interest 1, 2, 3: profit targets projected above the range
+//   - Invalidation Level: stop loss beyond the extreme
+//   - Target Interest 1, 2, 3: profit targets projected from the range
 //
-// All setups are LONG (reversal from session Low), matching original Xzenith.
+// Direction: close below midpoint → LONG, above → SHORT
 // No repainting: all levels are calculated after the session closes.
 
 //@version=6
@@ -139,12 +139,13 @@ if inSession
 // SETUP DETECTION (on session end)
 // ============================================================================
 
-// All setups are LONG (matching original Xzenith behavior)
+// Direction: close[1] below range midpoint → LONG, above → SHORT
 
 var float setupHigh       = na
 var float setupLow        = na
 var int   setupBar        = na
 var int   setupEndBar     = na
+var bool  setupIsLong     = false
 var float entryLevel      = na
 var float invalidLevel    = na
 var float tgt1            = na
@@ -161,20 +162,30 @@ if sessionEnd
     setupEndBar  := bar_index
 
     float rangeSize = sessionHigh - sessionLow
+    float rangeMid  = (sessionHigh + sessionLow) / 2
 
     // Range must exceed minimum ATR threshold and daily setup limit
     bool minOK = minRangeATR == 0 or rangeSize >= filterATR * minRangeATR
     bool maxOK = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
     bool rangeOK = minOK and maxOK and setupsToday < maxSetupsPerDay
     if rangeOK
+        setupIsLong := close[1] < rangeMid
         setupsToday += 1
 
-        // LONG: entry at GW midpoint near Low, targets above, invalidation below
-        entryLevel   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
-        invalidLevel := setupLow - rangeSize * invalidationFib
-        tgt1        := setupLow + rangeSize * targetStart
-        tgt2        := setupLow + rangeSize * (targetStart + targetSpacing)
-        tgt3        := setupLow + rangeSize * (targetStart + targetSpacing * 2)
+        if setupIsLong
+            // LONG: entry at GW midpoint near Low, targets above, invalidation below
+            entryLevel   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
+            invalidLevel := setupLow - rangeSize * invalidationFib
+            tgt1        := setupLow + rangeSize * targetStart
+            tgt2        := setupLow + rangeSize * (targetStart + targetSpacing)
+            tgt3        := setupLow + rangeSize * (targetStart + targetSpacing * 2)
+        else
+            // SHORT: entry at GW midpoint near High, targets below, invalidation above
+            entryLevel   := setupHigh - rangeSize * (gwAbove - gwBelow) / 2
+            invalidLevel := setupHigh + rangeSize * invalidationFib
+            tgt1        := setupHigh - rangeSize * targetStart
+            tgt2        := setupHigh - rangeSize * (targetStart + targetSpacing)
+            tgt3        := setupHigh - rangeSize * (targetStart + targetSpacing * 2)
 
         newSetup := true
 
@@ -240,8 +251,12 @@ if newSetup
 // ALERTS
 // ============================================================================
 
-alertcondition(newSetup, "Long Setup Detected",
+alertcondition(newSetup and setupIsLong, "Long Setup Detected",
      "Xzenith LONG Setup on {{ticker}} ({{interval}}) | High: {{plot_0}} | Low: {{plot_1}}")
+alertcondition(newSetup and not setupIsLong, "Short Setup Detected",
+     "Xzenith SHORT Setup on {{ticker}} ({{interval}}) | High: {{plot_0}} | Low: {{plot_1}}")
+alertcondition(newSetup, "Any Setup Detected",
+     "Xzenith Setup on {{ticker}} ({{interval}})")
 
 // Hidden plots for alert message values
 plot(setupHigh, "Setup High", display=display.none)

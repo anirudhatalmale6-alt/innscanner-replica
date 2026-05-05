@@ -235,8 +235,10 @@ if sessionEnd
         savedRange := sessionHigh - sessionLow
         savedATR   := filterATR
 
-        // Determine SHORT formula mode based on range/ATR ratio
-        useRangeMode := savedRange / savedATR > 5.0
+        // Determine SHORT formula mode based on chart timeframe
+        // Range mode for 1M-2M (levels spread above session high)
+        // ATR mode for 5M+ (levels near session high)
+        useRangeMode := timeframe.in_seconds() <= 120
 
         // SHORT: range-based entry level (used as trigger in range mode)
         float rangeCalc  = savedRange

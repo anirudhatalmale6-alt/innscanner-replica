@@ -225,13 +225,13 @@ if inSession and liveActive
             liveTgt2    := sessionLow + rangeSize * (targetStart + targetSpacing)
             liveTgt3    := sessionLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            float avgGW = (gwAbove + gwBelow) / 2
-            float ref   = sessionHigh + rangeSize * targetSpacing
-            liveInvalid := ref + rangeSize * gwAbove
-            liveEntry   := liveInvalid - rangeSize * avgGW
-            liveTgt1    := liveInvalid - rangeSize * avgGW * 2
-            liveTgt2    := liveInvalid - rangeSize * avgGW * 3
-            liveTgt3    := liveInvalid - rangeSize * avgGW * 4
+            float ref     = sessionHigh + rangeSize * targetSpacing
+            float tgtStep = rangeSize * (targetStart - targetSpacing)
+            liveInvalid := ref + rangeSize * gwBelow
+            liveEntry   := ref + rangeSize * gwBelow / 2
+            liveTgt1    := ref
+            liveTgt2    := ref - tgtStep
+            liveTgt3    := ref - tgtStep * 2
 
         // Update High/Low lines and labels
         if showHighLow and not na(liveHighLine)
@@ -322,13 +322,13 @@ if sessionEnd
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            float avgGW = (gwAbove + gwBelow) / 2
-            float ref   = setupHigh + rangeSize * targetSpacing
-            finalInvalid := ref + rangeSize * gwAbove
-            finalEntry   := finalInvalid - rangeSize * avgGW
-            finalTgt1    := finalInvalid - rangeSize * avgGW * 2
-            finalTgt2    := finalInvalid - rangeSize * avgGW * 3
-            finalTgt3    := finalInvalid - rangeSize * avgGW * 4
+            float ref     = setupHigh + rangeSize * targetSpacing
+            float tgtStep = rangeSize * (targetStart - targetSpacing)
+            finalInvalid := ref + rangeSize * gwBelow
+            finalEntry   := ref + rangeSize * gwBelow / 2
+            finalTgt1    := ref
+            finalTgt2    := ref - tgtStep
+            finalTgt3    := ref - tgtStep * 2
 
         // Update the live drawing objects to final values
         if showHighLow and not na(liveHighLine)

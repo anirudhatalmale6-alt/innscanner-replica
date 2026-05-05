@@ -1,11 +1,10 @@
-// Xzenith Replica - Session-based swing range indicator
-// Identifies a trading session range (High/Low), then plots:
-//   - Entry Level: exact entry price (midpoint of Golden Window zone)
-//   - Invalidation Level: stop loss beyond the extreme
-//   - Target Interest 1, 2, 3: profit targets projected from the range
-//
-// Direction: close below midpoint → LONG, above → SHORT
-// Levels develop in real-time during the session and finalize at session close.
+// Xzenith Replica - ICT/SMC Session Range Indicator with PO3 Timing
+// Identifies a trading session range (High/Low), then waits for PO3:
+//   1. Session defines the range (Accumulation)
+//   2. Post-session, price sweeps beyond one extreme (Manipulation)
+//   3. Price reverses back inside the range (Distribution trigger)
+//   4. Levels drawn at trigger: Entry, Invalidation (SL), 3 Targets (TP)
+// Direction: sweep high + reversal → SHORT, sweep low + reversal → LONG
 
 //@version=6
 indicator("Xzenith Replica", overlay=true,
@@ -115,50 +114,73 @@ filterATR = ta.atr(filterATRPeriod)
 // SESSION RANGE TRACKING
 // ============================================================================
 
-var float sessionHigh    = na
-var float sessionLow     = na
+var float sessionHigh     = na
+var float sessionLow      = na
 var int   sessionStartBar = na
-var int   setupsToday    = 0
+var int   setupsToday     = 0
 
 if sessionStart
-    sessionHigh    := high
-    sessionLow     := low
+    sessionHigh     := high
+    sessionLow      := low
     sessionStartBar := bar_index
-    setupsToday    := 0
+    setupsToday     := 0
 
 if inSession
     sessionHigh := math.max(nz(sessionHigh, high), high)
     sessionLow  := math.min(nz(sessionLow, low), low)
 
 // ============================================================================
-// LIVE DEVELOPING LEVELS (updated every bar during session)
+// PO3 STATE
 // ============================================================================
 
-var line liveHighLine    = na
-var line liveLowLine     = na
-var line liveEntryLine   = na
-var line liveInvalidLine = na
-var line liveTgt1Line    = na
-var line liveTgt2Line    = na
-var line liveTgt3Line    = na
+var bool  po3Waiting = false
+var float savedHigh  = na
+var float savedLow   = na
+var bool  sweptHigh  = false
+var bool  sweptLow   = false
 
-var label liveHighLabel    = na
-var label liveLowLabel     = na
-var label liveEntryLabel   = na
-var label liveInvalidLabel = na
-var label liveTgt1Label    = na
-var label liveTgt2Label    = na
-var label liveTgt3Label    = na
+// ============================================================================
+// DRAWING OBJECTS - High/Low lines (created at session start, updated live)
+// ============================================================================
 
-var bool  liveIsLong     = false
-var bool  liveActive     = false
+var line  liveHighLine  = na
+var line  liveLowLine   = na
+var label liveHighLabel = na
+var label liveLowLabel  = na
+
+// ============================================================================
+// SETUP STATE
+// ============================================================================
+
+var float setupHigh   = na
+var float setupLow    = na
+var bool  setupIsLong = false
+var bool  newSetup    = false
 
 lineExtend = 80
 
-if sessionStart
-    liveActive := true
+newSetup := false
 
-    // Create new drawing objects for this session
+// ============================================================================
+// SESSION START: Create High/Low drawings, cancel any pending PO3
+// ============================================================================
+
+if sessionStart
+    if po3Waiting
+        po3Waiting := false
+        if not na(liveHighLine)
+            line.delete(liveHighLine)
+            liveHighLine := na
+        if not na(liveLowLine)
+            line.delete(liveLowLine)
+            liveLowLine := na
+        if not na(liveHighLabel)
+            label.delete(liveHighLabel)
+            liveHighLabel := na
+        if not na(liveLowLabel)
+            label.delete(liveLowLabel)
+            liveLowLabel := na
+
     if showHighLow
         liveHighLine := line.new(bar_index, high, bar_index + lineExtend, high,
              color=highLowColor, width=1, style=line.style_solid)
@@ -171,149 +193,85 @@ if sessionStart
              style=label.style_label_up, color=color.new(color.gray, 40),
              textcolor=color.white, size=size.normal)
 
-    if showEntry
-        liveEntryLine := line.new(bar_index, close, bar_index + lineExtend, close,
-             color=entryColor, width=2, style=line.style_dashed)
-        liveEntryLabel := label.new(bar_index + 20, close,
-             "ENTRY " + str.tostring(close, format.mintick),
-             style=label.style_label_down, color=entryColor,
-             textcolor=color.white, size=size.small)
-
-    if showInvalid
-        liveInvalidLine := line.new(bar_index, close, bar_index + lineExtend, close,
-             color=invalidColor, width=2, style=line.style_solid)
-        liveInvalidLabel := label.new(bar_index + 20, close, "INVALIDATION LEVEL",
-             style=label.style_label_down, color=invalidColor,
-             textcolor=color.white, size=size.small)
-
-    if showTargets
-        liveTgt1Line := line.new(bar_index, close, bar_index + lineExtend, close,
-             color=targetColor, width=1, style=line.style_solid)
-        liveTgt1Label := label.new(bar_index + 20, close, "TARGET INTEREST 1",
-             style=label.style_label_down, color=targetColor,
-             textcolor=color.white, size=size.small)
-        liveTgt2Line := line.new(bar_index, close, bar_index + lineExtend, close,
-             color=targetColor, width=1, style=line.style_solid)
-        liveTgt2Label := label.new(bar_index + 20, close, "TARGET INTEREST 2",
-             style=label.style_label_down, color=targetColor,
-             textcolor=color.white, size=size.small)
-        liveTgt3Line := line.new(bar_index, close, bar_index + lineExtend, close,
-             color=targetColor, width=1, style=line.style_solid)
-        liveTgt3Label := label.new(bar_index + 20, close, "TARGET INTEREST 3",
-             style=label.style_label_down, color=targetColor,
-             textcolor=color.white, size=size.small)
-
-// Update levels every bar during session
-if inSession and liveActive
-    float rangeSize = sessionHigh - sessionLow
-    float rangeMid  = (sessionHigh + sessionLow) / 2
-
-    // Live direction: use current close vs midpoint
-    liveIsLong := close < rangeMid
-
-    float liveEntry = na
-    float liveInvalid = na
-    float liveTgt1 = na
-    float liveTgt2 = na
-    float liveTgt3 = na
-
-    if rangeSize > 0
-        if liveIsLong
-            liveEntry   := sessionLow + rangeSize * (gwAbove - gwBelow) / 2
-            liveInvalid := sessionLow - rangeSize * invalidationFib
-            liveTgt1    := sessionLow + rangeSize * targetStart
-            liveTgt2    := sessionLow + rangeSize * (targetStart + targetSpacing)
-            liveTgt3    := sessionLow + rangeSize * (targetStart + targetSpacing * 2)
-        else
-            float ref     = sessionHigh + rangeSize * targetSpacing
-            float tgtStep = rangeSize * (targetStart - targetSpacing)
-            liveInvalid := ref + rangeSize * gwBelow
-            liveEntry   := ref + rangeSize * gwBelow / 2
-            liveTgt1    := ref
-            liveTgt2    := ref - tgtStep
-            liveTgt3    := ref - tgtStep * 2
-
-        // Update High/Low lines and labels
-        if showHighLow and not na(liveHighLine)
-            line.set_y1(liveHighLine, sessionHigh)
-            line.set_y2(liveHighLine, sessionHigh)
-            line.set_x2(liveHighLine, bar_index + lineExtend)
-            line.set_y1(liveLowLine, sessionLow)
-            line.set_y2(liveLowLine, sessionLow)
-            line.set_x2(liveLowLine, bar_index + lineExtend)
-            label.set_y(liveHighLabel, sessionHigh)
-            label.set_text(liveHighLabel, "High: " + str.tostring(sessionHigh, format.mintick))
-            label.set_y(liveLowLabel, sessionLow)
-            label.set_text(liveLowLabel, "Low: " + str.tostring(sessionLow, format.mintick))
-
-        // Update Entry line
-        if showEntry and not na(liveEntryLine)
-            line.set_y1(liveEntryLine, liveEntry)
-            line.set_y2(liveEntryLine, liveEntry)
-            line.set_x2(liveEntryLine, bar_index + lineExtend)
-            label.set_y(liveEntryLabel, liveEntry)
-            label.set_x(liveEntryLabel, bar_index + 20)
-            label.set_text(liveEntryLabel, "ENTRY " + str.tostring(liveEntry, format.mintick))
-
-        // Update Invalidation line
-        if showInvalid and not na(liveInvalidLine)
-            line.set_y1(liveInvalidLine, liveInvalid)
-            line.set_y2(liveInvalidLine, liveInvalid)
-            line.set_x2(liveInvalidLine, bar_index + lineExtend)
-            label.set_y(liveInvalidLabel, liveInvalid)
-            label.set_x(liveInvalidLabel, bar_index + 20)
-
-        // Update Target lines
-        if showTargets and not na(liveTgt1Line)
-            line.set_y1(liveTgt1Line, liveTgt1)
-            line.set_y2(liveTgt1Line, liveTgt1)
-            line.set_x2(liveTgt1Line, bar_index + lineExtend)
-            label.set_y(liveTgt1Label, liveTgt1)
-            label.set_x(liveTgt1Label, bar_index + 20)
-
-            line.set_y1(liveTgt2Line, liveTgt2)
-            line.set_y2(liveTgt2Line, liveTgt2)
-            line.set_x2(liveTgt2Line, bar_index + lineExtend)
-            label.set_y(liveTgt2Label, liveTgt2)
-            label.set_x(liveTgt2Label, bar_index + 20)
-
-            line.set_y1(liveTgt3Line, liveTgt3)
-            line.set_y2(liveTgt3Line, liveTgt3)
-            line.set_x2(liveTgt3Line, bar_index + lineExtend)
-            label.set_y(liveTgt3Label, liveTgt3)
-            label.set_x(liveTgt3Label, bar_index + 20)
-
 // ============================================================================
-// SESSION END: Finalize direction and lock levels
+// IN SESSION: Update High/Low lines only (no Entry/SL/TP during session)
 // ============================================================================
 
-var float setupHigh   = na
-var float setupLow    = na
-var bool  setupIsLong = false
-var bool  newSetup    = false
+if inSession and showHighLow and not na(liveHighLine)
+    line.set_y1(liveHighLine, sessionHigh)
+    line.set_y2(liveHighLine, sessionHigh)
+    line.set_x2(liveHighLine, bar_index + lineExtend)
+    line.set_y1(liveLowLine, sessionLow)
+    line.set_y2(liveLowLine, sessionLow)
+    line.set_x2(liveLowLine, bar_index + lineExtend)
+    label.set_y(liveHighLabel, sessionHigh)
+    label.set_text(liveHighLabel, "High: " + str.tostring(sessionHigh, format.mintick))
+    label.set_y(liveLowLabel, sessionLow)
+    label.set_text(liveLowLabel, "Low: " + str.tostring(sessionLow, format.mintick))
 
-newSetup := false
+// ============================================================================
+// SESSION END: Validate range and enter PO3 monitoring state
+// ============================================================================
 
 if sessionEnd
     float rangeSize = sessionHigh - sessionLow
-    float rangeMid  = (sessionHigh + sessionLow) / 2
 
-    bool minOK = minRangeATR == 0 or rangeSize >= filterATR * minRangeATR
-    bool maxOK = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
+    bool minOK   = minRangeATR == 0 or rangeSize >= filterATR * minRangeATR
+    bool maxOK   = maxRangeATR == 0 or rangeSize <= filterATR * maxRangeATR
     bool rangeOK = minOK and maxOK and setupsToday < maxSetupsPerDay
 
     if rangeOK
-        setupHigh   := sessionHigh
-        setupLow    := sessionLow
-        // Final direction uses last session bar's close
-        setupIsLong := close[1] < rangeMid
+        savedHigh  := sessionHigh
+        savedLow   := sessionLow
+        po3Waiting := true
+        sweptHigh  := false
+        sweptLow   := false
         setupsToday += 1
+    else
+        if not na(liveHighLine)
+            line.delete(liveHighLine)
+            liveHighLine := na
+        if not na(liveLowLine)
+            line.delete(liveLowLine)
+            liveLowLine := na
+        if not na(liveHighLabel)
+            label.delete(liveHighLabel)
+            liveHighLabel := na
+        if not na(liveLowLabel)
+            label.delete(liveLowLabel)
+            liveLowLabel := na
 
-        float finalEntry = na
+// ============================================================================
+// POST-SESSION PO3 MONITORING: Sweep detection + reversal trigger
+// ============================================================================
+
+if po3Waiting and not inSession
+    // Keep extending High/Low lines forward
+    if showHighLow and not na(liveHighLine)
+        line.set_x2(liveHighLine, bar_index + lineExtend)
+        line.set_x2(liveLowLine, bar_index + lineExtend)
+
+    // Track sweeps: price exceeding the session range
+    if high > savedHigh
+        sweptHigh := true
+    if low < savedLow
+        sweptLow := true
+
+    // Check for reversal: swept extreme + close back inside range
+    bool shortTrigger = sweptHigh and close < savedHigh
+    bool longTrigger  = sweptLow and close > savedLow
+
+    if shortTrigger or longTrigger
+        setupIsLong := longTrigger and not shortTrigger
+        setupHigh   := savedHigh
+        setupLow    := savedLow
+        float rangeSize = savedHigh - savedLow
+
+        float finalEntry   = na
         float finalInvalid = na
-        float finalTgt1 = na
-        float finalTgt2 = na
-        float finalTgt3 = na
+        float finalTgt1    = na
+        float finalTgt2    = na
+        float finalTgt3    = na
 
         if setupIsLong
             finalEntry   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
@@ -330,68 +288,43 @@ if sessionEnd
             finalTgt2    := ref - tgtStep
             finalTgt3    := ref - tgtStep * 2
 
-        // Update the live drawing objects to final values
-        if showHighLow and not na(liveHighLine)
-            line.set_y1(liveHighLine, setupHigh)
-            line.set_y2(liveHighLine, setupHigh)
-            line.set_y1(liveLowLine, setupLow)
-            line.set_y2(liveLowLine, setupLow)
-            label.set_y(liveHighLabel, setupHigh)
-            label.set_text(liveHighLabel, "High: " + str.tostring(setupHigh, format.mintick))
-            label.set_y(liveLowLabel, setupLow)
-            label.set_text(liveLowLabel, "Low: " + str.tostring(setupLow, format.mintick))
+        // Draw Entry level
+        if showEntry
+            line.new(bar_index, finalEntry, bar_index + lineExtend, finalEntry,
+                 color=entryColor, width=2, style=line.style_dashed)
+            label.new(bar_index + 20, finalEntry,
+                 "ENTRY " + str.tostring(finalEntry, format.mintick),
+                 style=label.style_label_down, color=entryColor,
+                 textcolor=color.white, size=size.small)
 
-        if showEntry and not na(liveEntryLine)
-            line.set_y1(liveEntryLine, finalEntry)
-            line.set_y2(liveEntryLine, finalEntry)
-            label.set_y(liveEntryLabel, finalEntry)
-            label.set_text(liveEntryLabel, "ENTRY " + str.tostring(finalEntry, format.mintick))
+        // Draw Invalidation level
+        if showInvalid
+            line.new(bar_index, finalInvalid, bar_index + lineExtend, finalInvalid,
+                 color=invalidColor, width=2, style=line.style_solid)
+            label.new(bar_index + 20, finalInvalid, "INVALIDATION LEVEL",
+                 style=label.style_label_down, color=invalidColor,
+                 textcolor=color.white, size=size.small)
 
-        if showInvalid and not na(liveInvalidLine)
-            line.set_y1(liveInvalidLine, finalInvalid)
-            line.set_y2(liveInvalidLine, finalInvalid)
+        // Draw Target levels
+        if showTargets
+            line.new(bar_index, finalTgt1, bar_index + lineExtend, finalTgt1,
+                 color=targetColor, width=1, style=line.style_solid)
+            label.new(bar_index + 20, finalTgt1, "TARGET INTEREST 1",
+                 style=label.style_label_down, color=targetColor,
+                 textcolor=color.white, size=size.small)
+            line.new(bar_index, finalTgt2, bar_index + lineExtend, finalTgt2,
+                 color=targetColor, width=1, style=line.style_solid)
+            label.new(bar_index + 20, finalTgt2, "TARGET INTEREST 2",
+                 style=label.style_label_down, color=targetColor,
+                 textcolor=color.white, size=size.small)
+            line.new(bar_index, finalTgt3, bar_index + lineExtend, finalTgt3,
+                 color=targetColor, width=1, style=line.style_solid)
+            label.new(bar_index + 20, finalTgt3, "TARGET INTEREST 3",
+                 style=label.style_label_down, color=targetColor,
+                 textcolor=color.white, size=size.small)
 
-        if showTargets and not na(liveTgt1Line)
-            line.set_y1(liveTgt1Line, finalTgt1)
-            line.set_y2(liveTgt1Line, finalTgt1)
-            line.set_y1(liveTgt2Line, finalTgt2)
-            line.set_y2(liveTgt2Line, finalTgt2)
-            line.set_y1(liveTgt3Line, finalTgt3)
-            line.set_y2(liveTgt3Line, finalTgt3)
-
-        newSetup := true
-    else
-        // Range didn't qualify - delete the live drawing objects
-        if not na(liveHighLine)
-            line.delete(liveHighLine)
-        if not na(liveLowLine)
-            line.delete(liveLowLine)
-        if not na(liveHighLabel)
-            label.delete(liveHighLabel)
-        if not na(liveLowLabel)
-            label.delete(liveLowLabel)
-        if not na(liveEntryLine)
-            line.delete(liveEntryLine)
-        if not na(liveEntryLabel)
-            label.delete(liveEntryLabel)
-        if not na(liveInvalidLine)
-            line.delete(liveInvalidLine)
-        if not na(liveInvalidLabel)
-            label.delete(liveInvalidLabel)
-        if not na(liveTgt1Line)
-            line.delete(liveTgt1Line)
-        if not na(liveTgt1Label)
-            label.delete(liveTgt1Label)
-        if not na(liveTgt2Line)
-            line.delete(liveTgt2Line)
-        if not na(liveTgt2Label)
-            label.delete(liveTgt2Label)
-        if not na(liveTgt3Line)
-            line.delete(liveTgt3Line)
-        if not na(liveTgt3Label)
-            label.delete(liveTgt3Label)
-
-    liveActive := false
+        newSetup   := true
+        po3Waiting := false
 
 // ============================================================================
 // ALERTS

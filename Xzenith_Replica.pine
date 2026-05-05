@@ -137,9 +137,10 @@ var bool  po3Waiting        = false
 var float savedHigh         = na
 var float savedLow          = na
 var float shortEntryLevel   = na
-var float longEntryLevel    = na
+var float longSweepLevel    = na
+var float longReturnLevel   = na
 var bool  passedShortEntry  = false
-var bool  passedLongEntry   = false
+var bool  passedLongSweep   = false
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -227,13 +228,16 @@ if sessionEnd
         savedLow   := sessionLow
         float rangeCalc = sessionHigh - sessionLow
 
-        // Pre-calculate entry levels for both directions
-        longEntryLevel  := sessionLow + rangeCalc * (gwAbove - gwBelow) / 2
+        // SHORT: sweep above entry level, return below it
         float ref        = sessionHigh + rangeCalc * targetSpacing
         shortEntryLevel := ref + rangeCalc * gwBelow / 2
 
+        // LONG: sweep below invalidation level (far from low), return above entry level
+        longSweepLevel  := sessionLow - rangeCalc * invalidationFib
+        longReturnLevel := sessionLow + rangeCalc * (gwAbove - gwBelow) / 2
+
         passedShortEntry := false
-        passedLongEntry  := false
+        passedLongSweep  := false
         po3Waiting       := true
         setupsToday     += 1
     else
@@ -262,13 +266,13 @@ if po3Waiting and not inSession
 
     // Check trigger BEFORE updating flags (ensures sweep and return are on different bars)
     bool shortTrigger = passedShortEntry and close <= shortEntryLevel
-    bool longTrigger  = passedLongEntry and close >= longEntryLevel
+    bool longTrigger  = passedLongSweep and close >= longReturnLevel
 
-    // Track if price has passed beyond entry levels (manipulation move)
+    // Track manipulation moves
     if high > shortEntryLevel
         passedShortEntry := true
-    if low < longEntryLevel
-        passedLongEntry := true
+    if low < longSweepLevel
+        passedLongSweep := true
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

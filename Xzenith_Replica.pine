@@ -133,13 +133,13 @@ if inSession
 // PO3 STATE
 // ============================================================================
 
-var bool  po3Waiting = false
-var float savedHigh  = na
-var float savedLow   = na
-var float po3High    = na
-var int   po3HighBar = 0
-var float po3Low     = na
-var int   po3LowBar  = 0
+var bool  po3Waiting        = false
+var float savedHigh         = na
+var float savedLow          = na
+var float shortEntryLevel   = na
+var float longEntryLevel    = na
+var bool  passedShortEntry  = false
+var bool  passedLongEntry   = false
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -225,12 +225,17 @@ if sessionEnd
     if rangeOK
         savedHigh  := sessionHigh
         savedLow   := sessionLow
-        po3Waiting := true
-        po3High    := na
-        po3Low     := na
-        po3HighBar := 0
-        po3LowBar  := 0
-        setupsToday += 1
+        float rangeCalc = sessionHigh - sessionLow
+
+        // Pre-calculate entry levels for both directions
+        longEntryLevel  := sessionLow + rangeCalc * (gwAbove - gwBelow) / 2
+        float ref        = sessionHigh + rangeCalc * targetSpacing
+        shortEntryLevel := ref + rangeCalc * gwBelow / 2
+
+        passedShortEntry := false
+        passedLongEntry  := false
+        po3Waiting       := true
+        setupsToday     += 1
     else
         if not na(liveHighLine)
             line.delete(liveHighLine)
@@ -255,24 +260,18 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Track post-session extremes (manipulation high/low)
-    if na(po3High) or high > po3High
-        po3High    := high
-        po3HighBar := bar_index
-    if na(po3Low) or low < po3Low
-        po3Low    := low
-        po3LowBar := bar_index
+    // Check trigger BEFORE updating flags (ensures sweep and return are on different bars)
+    bool shortTrigger = passedShortEntry and close <= shortEntryLevel
+    bool longTrigger  = passedLongEntry and close >= longEntryLevel
 
-    // Confirmed pivot: extreme exceeded session range AND held for pivotLookback bars
-    bool shortTrigger = not na(po3High) and po3High > savedHigh and bar_index - po3HighBar >= pivotLookback
-    bool longTrigger  = not na(po3Low) and po3Low < savedLow and bar_index - po3LowBar >= pivotLookback
+    // Track if price has passed beyond entry levels (manipulation move)
+    if high > shortEntryLevel
+        passedShortEntry := true
+    if low < longEntryLevel
+        passedLongEntry := true
 
     if shortTrigger or longTrigger
-        // If both confirmed, use the more recent manipulation
-        if shortTrigger and longTrigger
-            setupIsLong := po3LowBar > po3HighBar
-        else
-            setupIsLong := longTrigger
+        setupIsLong := longTrigger and not shortTrigger
         setupHigh   := savedHigh
         setupLow    := savedLow
         float rangeSize = savedHigh - savedLow

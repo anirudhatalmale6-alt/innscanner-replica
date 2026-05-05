@@ -225,12 +225,12 @@ if inSession and liveActive
             liveTgt2    := sessionLow + rangeSize * (targetStart + targetSpacing)
             liveTgt3    := sessionLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            float ref = sessionHigh + rangeSize * targetSpacing
-            liveEntry   := ref + rangeSize * (gwAbove - gwBelow) / 2
-            liveInvalid := ref + rangeSize * gwAbove
-            liveTgt1    := ref - rangeSize * gwBelow
-            liveTgt2    := ref - rangeSize * gwBelow * 2
-            liveTgt3    := ref - rangeSize * gwBelow * 3
+            float avgGW = (gwAbove + gwBelow) / 2
+            liveEntry   := sessionHigh - rangeSize * gwAbove
+            liveInvalid := sessionHigh
+            liveTgt1    := sessionHigh - rangeSize * avgGW * 2
+            liveTgt2    := sessionHigh - rangeSize * avgGW * 3
+            liveTgt3    := sessionHigh - rangeSize * avgGW * 4
 
         // Update High/Low lines and labels
         if showHighLow and not na(liveHighLine)
@@ -321,12 +321,12 @@ if sessionEnd
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            float ref = setupHigh + rangeSize * targetSpacing
-            finalEntry   := ref + rangeSize * (gwAbove - gwBelow) / 2
-            finalInvalid := ref + rangeSize * gwAbove
-            finalTgt1    := ref - rangeSize * gwBelow
-            finalTgt2    := ref - rangeSize * gwBelow * 2
-            finalTgt3    := ref - rangeSize * gwBelow * 3
+            float avgGW = (gwAbove + gwBelow) / 2
+            finalEntry   := setupHigh - rangeSize * gwAbove
+            finalInvalid := setupHigh
+            finalTgt1    := setupHigh - rangeSize * avgGW * 2
+            finalTgt2    := setupHigh - rangeSize * avgGW * 3
+            finalTgt3    := setupHigh - rangeSize * avgGW * 4
 
         // Update the live drawing objects to final values
         if showHighLow and not na(liveHighLine)

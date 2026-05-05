@@ -136,11 +136,14 @@ if inSession
 var bool  po3Waiting        = false
 var float savedHigh         = na
 var float savedLow          = na
+var float savedRange        = na
 var float shortEntryLevel   = na
 var float longSweepLevel    = na
 var float longReturnLevel   = na
 var bool  passedShortEntry  = false
 var bool  passedLongSweep   = false
+var float po3High           = na
+var int   po3HighBar        = na
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -226,18 +229,20 @@ if sessionEnd
     if rangeOK
         savedHigh  := sessionHigh
         savedLow   := sessionLow
-        float rangeCalc = sessionHigh - sessionLow
+        savedRange := sessionHigh - sessionLow
 
-        // SHORT: sweep above entry level, return below it
-        float ref        = sessionHigh + rangeCalc * targetSpacing
-        shortEntryLevel := ref + rangeCalc * gwBelow / 2
+        // SHORT: pivot-based trigger (price makes swing high above session high, then reverses)
+        shortEntryLevel := sessionHigh
 
         // LONG: sweep below invalidation level (far from low), return above entry level
+        float rangeCalc  = savedRange
         longSweepLevel  := sessionLow - rangeCalc * invalidationFib
         longReturnLevel := sessionLow + rangeCalc * (gwAbove - gwBelow) / 2
 
         passedShortEntry := false
         passedLongSweep  := false
+        po3High          := na
+        po3HighBar       := na
         po3Waiting       := true
         setupsToday     += 1
     else
@@ -264,23 +269,32 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Check trigger BEFORE updating flags (ensures sweep and return are on different bars)
-    bool shortTrigger = passedShortEntry and close <= shortEntryLevel
-    bool longTrigger  = passedLongSweep and close >= longReturnLevel
-
-    // Track manipulation moves
-    if high > shortEntryLevel
+    // Track manipulation highs for SHORT pivot detection
+    if high > savedHigh
         passedShortEntry := true
+        if na(po3High) or high > po3High
+            po3High    := high
+            po3HighBar := bar_index
+
+    // Track manipulation lows for LONG sweep detection
     if low < longSweepLevel
         passedLongSweep := true
+
+    // SHORT trigger: pivot confirmed (no new high for pivotLookback bars) + close back inside range
+    bool shortPivotConfirmed = passedShortEntry and not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
+    bool shortTrigger = shortPivotConfirmed and close <= savedHigh
+
+    // LONG trigger: sweep below invalidation + close back above entry
+    bool longTrigger = passedLongSweep and close >= longReturnLevel
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger
         setupHigh   := savedHigh
         setupLow    := savedLow
-        float rangeSize = savedHigh - savedLow
+        float rangeSize = savedRange
 
         float finalEntry   = na
+        float finalEntryHi = na
         float finalInvalid = na
         float finalTgt1    = na
         float finalTgt2    = na
@@ -288,25 +302,52 @@ if po3Waiting and not inSession
 
         if setupIsLong
             finalEntry   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
+            finalEntryHi := setupLow + rangeSize * gwAbove
             finalInvalid := setupLow - rangeSize * invalidationFib
             finalTgt1    := setupLow + rangeSize * targetStart
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            float ref     = setupHigh + rangeSize * targetSpacing
-            float tgtStep = rangeSize * (targetStart - targetSpacing)
-            finalInvalid := ref + rangeSize * gwBelow
-            finalEntry   := ref + rangeSize * gwBelow / 2
-            finalTgt1    := ref
-            finalTgt2    := ref - tgtStep
-            finalTgt3    := ref - tgtStep * 2
+            // Calculate range-based SHORT levels
+            float refRange     = setupHigh + rangeSize * targetSpacing
+            float tgtStepRange = rangeSize * (targetStart - targetSpacing)
+            float entryRange   = refRange + rangeSize * gwBelow / 2
+            float invalidRange = refRange + rangeSize * gwBelow
 
-        // Draw Entry level
+            // Calculate ATR-based SHORT levels
+            float atrVal      = filterATR
+            float entryATR    = setupHigh - atrVal * gwAbove
+            float invalidATR  = setupHigh + atrVal * invalidationFib
+            float tgt1ATR     = entryATR - atrVal * targetSpacing
+            float tgt2ATR     = entryATR - 2 * atrVal * targetSpacing
+            float tgt3ATR     = entryATR - 3 * atrVal * targetSpacing
+
+            // Switch: if range-based entry is reachable (below manipulation peak), use it
+            bool useRangeBased = entryRange <= nz(po3High, setupHigh)
+
+            if useRangeBased
+                finalEntry   := entryRange
+                finalEntryHi := refRange + rangeSize * gwBelow
+                finalInvalid := invalidRange
+                finalTgt1    := refRange
+                finalTgt2    := refRange - tgtStepRange
+                finalTgt3    := refRange - tgtStepRange * 2
+            else
+                finalEntry   := entryATR
+                finalEntryHi := setupHigh + atrVal * gwBelow
+                finalInvalid := invalidATR
+                finalTgt1    := tgt1ATR
+                finalTgt2    := tgt2ATR
+                finalTgt3    := tgt3ATR
+
+        // Draw Entry level (Golden Zone)
         if showEntry
             line.new(bar_index, finalEntry, bar_index + lineExtend, finalEntry,
                  color=entryColor, width=2, style=line.style_dashed)
+            line.new(bar_index, finalEntryHi, bar_index + lineExtend, finalEntryHi,
+                 color=entryColor, width=2, style=line.style_dashed)
             label.new(bar_index + 20, finalEntry,
-                 "ENTRY " + str.tostring(finalEntry, format.mintick),
+                 "GW " + str.tostring(finalEntry, format.mintick) + " - " + str.tostring(finalEntryHi, format.mintick),
                  style=label.style_label_down, color=entryColor,
                  textcolor=color.white, size=size.small)
 

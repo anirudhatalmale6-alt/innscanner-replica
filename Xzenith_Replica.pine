@@ -137,6 +137,8 @@ var bool  po3Waiting        = false
 var float savedHigh         = na
 var float savedLow          = na
 var float savedRange        = na
+var float savedATR          = na
+var bool  useRangeMode      = false
 var float shortRangeEntry   = na
 var float longSweepLevel    = na
 var float longReturnLevel   = na
@@ -231,8 +233,12 @@ if sessionEnd
         savedHigh  := sessionHigh
         savedLow   := sessionLow
         savedRange := sessionHigh - sessionLow
+        savedATR   := filterATR
 
-        // SHORT: range-based entry level (primary trigger)
+        // Determine SHORT formula mode based on range/ATR ratio
+        useRangeMode := savedRange / savedATR > 5.0
+
+        // SHORT: range-based entry level (used as trigger in range mode)
         float rangeCalc  = savedRange
         float refRange   = sessionHigh + rangeCalc * targetSpacing
         shortRangeEntry := refRange + rangeCalc * gwBelow / 2
@@ -272,14 +278,14 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Track manipulation highs for pivot detection
+    // Track manipulation highs for pivot detection (ATR mode)
     if high > savedHigh
         passedPivotSweep := true
         if na(po3High) or high > po3High
             po3High    := high
             po3HighBar := bar_index
 
-    // Track range-based entry sweep
+    // Track range-based entry sweep (range mode)
     if high > shortRangeEntry
         passedRangeEntry := true
 
@@ -287,14 +293,15 @@ if po3Waiting and not inSession
     if low < longSweepLevel
         passedLongSweep := true
 
-    // PRIMARY SHORT trigger: sweep above range-based entry, then close back below it
-    bool rangeTrigger = passedRangeEntry and close <= shortRangeEntry
-
-    // FALLBACK SHORT trigger: pivot confirmed + close back inside range (for when range entry is unreachable)
-    bool pivotConfirmed = passedPivotSweep and not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
-    bool pivotTrigger = pivotConfirmed and close <= savedHigh and not passedRangeEntry
-
-    bool shortTrigger = rangeTrigger or pivotTrigger
+    // SHORT trigger depends on mode determined at session end
+    bool shortTrigger = false
+    if useRangeMode
+        // Range mode (1M): sweep above range entry + close back below it
+        shortTrigger := passedRangeEntry and close <= shortRangeEntry
+    else
+        // ATR mode (10M+): pivot confirmed + close back inside range
+        bool pivotConfirmed = passedPivotSweep and not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
+        shortTrigger := pivotConfirmed and close <= savedHigh
 
     // LONG trigger: sweep below invalidation + close back above entry
     bool longTrigger = passedLongSweep and close >= longReturnLevel
@@ -320,8 +327,8 @@ if po3Waiting and not inSession
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            if rangeTrigger
-                // Range-based SHORT levels (1M case: price reached range entry)
+            if useRangeMode
+                // Range-based SHORT levels (1M: range >> ATR)
                 float refR     = setupHigh + rangeSize * targetSpacing
                 float tgtStepR = rangeSize * (targetStart - targetSpacing)
                 finalEntry   := refR + rangeSize * gwBelow / 2
@@ -331,8 +338,8 @@ if po3Waiting and not inSession
                 finalTgt2    := refR - tgtStepR
                 finalTgt3    := refR - tgtStepR * 2
             else
-                // ATR-based SHORT levels (10M case: range entry unreachable)
-                float atrVal  = filterATR
+                // ATR-based SHORT levels (10M+: range close to ATR)
+                float atrVal  = savedATR
                 finalEntry   := setupHigh - atrVal * gwAbove
                 finalEntryHi := setupHigh + atrVal * gwBelow
                 finalInvalid := setupHigh + atrVal * invalidationFib

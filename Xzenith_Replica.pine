@@ -11,7 +11,7 @@
 // No repainting: all levels are calculated after the session closes.
 
 //@version=6
-indicator("Xzenith Replica", overlay=true, max_boxes_count=500,
+indicator("Xzenith Replica", overlay=true,
      max_lines_count=500, max_labels_count=500)
 
 // ============================================================================
@@ -83,11 +83,11 @@ targetSpacing = input.float(0.618, "Target Spacing (Fib)", minval=0.1, maxval=3.
 // ============================================================================
 
 showHighLow    = input.bool(true, "Show High/Low Labels", group="Display")
-showGoldenWin  = input.bool(true, "Show Golden Window Box", group="Display")
+showEntry      = input.bool(true, "Show Entry Level", group="Display")
 showInvalid    = input.bool(true, "Show Invalidation Level", group="Display")
 showTargets    = input.bool(true, "Show Target Interest Lines", group="Display")
 
-gwColor        = input.color(color.new(#b8960c, 40), "Golden Window Color", group="Colors")
+entryColor     = input.color(color.new(#d4a017, 0), "Entry Level Color", group="Colors")
 invalidColor   = input.color(color.new(color.red, 20), "Invalidation Level Color", group="Colors")
 targetColor    = input.color(color.new(color.green, 20), "Target Lines Color", group="Colors")
 highLowColor   = input.color(color.new(color.blue, 20), "High/Low Lines Color", group="Colors")
@@ -150,8 +150,7 @@ var float setupLow        = na
 var int   setupBar        = na
 var int   setupEndBar     = na
 var bool  setupIsLong     = false
-var float gwTop           = na
-var float gwBottom        = na
+var float entryLevel      = na
 var float invalidLevel    = na
 var float tgt1            = na
 var float tgt2            = na
@@ -178,17 +177,15 @@ if sessionEnd
         setupsToday += 1
 
         if setupIsLong
-            // LONG: GW centered on Low, targets spaced above, invalidation below
-            gwTop       := setupLow + rangeSize * gwAbove
-            gwBottom    := setupLow - rangeSize * gwBelow
+            // LONG: entry at GW midpoint near Low, targets above, invalidation below
+            entryLevel   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
             invalidLevel := setupLow - rangeSize * invalidationFib
             tgt1        := setupLow + rangeSize * targetStart
             tgt2        := setupLow + rangeSize * (targetStart + targetSpacing)
             tgt3        := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            // SHORT: GW centered on High, targets spaced below, invalidation above
-            gwTop       := setupHigh + rangeSize * gwBelow
-            gwBottom    := setupHigh - rangeSize * gwAbove
+            // SHORT: entry at GW midpoint near High, targets below, invalidation above
+            entryLevel   := setupHigh - rangeSize * (gwAbove - gwBelow) / 2
             invalidLevel := setupHigh + rangeSize * invalidationFib
             tgt1        := setupHigh - rangeSize * targetStart
             tgt2        := setupHigh - rangeSize * (targetStart + targetSpacing)
@@ -217,13 +214,14 @@ if newSetup
              style=label.style_label_up, color=color.new(color.gray, 40),
              textcolor=color.white, size=size.normal)
 
-    // --- Golden Window Box ---
-    if showGoldenWin
-        box.new(setupBar, gwTop, setupEndBar, gwBottom,
-             bgcolor=gwColor, border_color=color.new(#d4a017, 0), border_width=1)
-        label.new(math.round(math.avg(setupBar, setupEndBar)), math.avg(gwTop, gwBottom),
-             "GOLDEN WINDOW",
-             style=label.style_none, textcolor=color.new(color.white, 40), size=size.normal)
+    // --- Entry Level Line ---
+    if showEntry
+        line.new(setupEndBar, entryLevel, bar_index + lineExtend, entryLevel,
+             color=entryColor, width=2, style=line.style_dashed)
+        label.new(bar_index + 20, entryLevel,
+             "ENTRY " + str.tostring(entryLevel, format.mintick),
+             style=label.style_label_down, color=entryColor,
+             textcolor=color.white, size=size.small)
 
     // --- Invalidation Level ---
     if showInvalid

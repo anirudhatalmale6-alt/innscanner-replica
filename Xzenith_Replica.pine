@@ -137,10 +137,11 @@ var bool  po3Waiting        = false
 var float savedHigh         = na
 var float savedLow          = na
 var float savedRange        = na
-var float shortEntryLevel   = na
+var float shortRangeEntry   = na
 var float longSweepLevel    = na
 var float longReturnLevel   = na
-var bool  passedShortEntry  = false
+var bool  passedRangeEntry  = false
+var bool  passedPivotSweep  = false
 var bool  passedLongSweep   = false
 var float po3High           = na
 var int   po3HighBar        = na
@@ -231,15 +232,17 @@ if sessionEnd
         savedLow   := sessionLow
         savedRange := sessionHigh - sessionLow
 
-        // SHORT: pivot-based trigger (price makes swing high above session high, then reverses)
-        shortEntryLevel := sessionHigh
+        // SHORT: range-based entry level (primary trigger)
+        float rangeCalc  = savedRange
+        float refRange   = sessionHigh + rangeCalc * targetSpacing
+        shortRangeEntry := refRange + rangeCalc * gwBelow / 2
 
         // LONG: sweep below invalidation level (far from low), return above entry level
-        float rangeCalc  = savedRange
         longSweepLevel  := sessionLow - rangeCalc * invalidationFib
         longReturnLevel := sessionLow + rangeCalc * (gwAbove - gwBelow) / 2
 
-        passedShortEntry := false
+        passedRangeEntry := false
+        passedPivotSweep := false
         passedLongSweep  := false
         po3High          := na
         po3HighBar       := na
@@ -269,20 +272,29 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Track manipulation highs for SHORT pivot detection
+    // Track manipulation highs for pivot detection
     if high > savedHigh
-        passedShortEntry := true
+        passedPivotSweep := true
         if na(po3High) or high > po3High
             po3High    := high
             po3HighBar := bar_index
+
+    // Track range-based entry sweep
+    if high > shortRangeEntry
+        passedRangeEntry := true
 
     // Track manipulation lows for LONG sweep detection
     if low < longSweepLevel
         passedLongSweep := true
 
-    // SHORT trigger: pivot confirmed (no new high for pivotLookback bars) + close back inside range
-    bool shortPivotConfirmed = passedShortEntry and not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
-    bool shortTrigger = shortPivotConfirmed and close <= savedHigh
+    // PRIMARY SHORT trigger: sweep above range-based entry, then close back below it
+    bool rangeTrigger = passedRangeEntry and close <= shortRangeEntry
+
+    // FALLBACK SHORT trigger: pivot confirmed + close back inside range (for when range entry is unreachable)
+    bool pivotConfirmed = passedPivotSweep and not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
+    bool pivotTrigger = pivotConfirmed and close <= savedHigh and not passedRangeEntry
+
+    bool shortTrigger = rangeTrigger or pivotTrigger
 
     // LONG trigger: sweep below invalidation + close back above entry
     bool longTrigger = passedLongSweep and close >= longReturnLevel
@@ -308,37 +320,25 @@ if po3Waiting and not inSession
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            // Calculate range-based SHORT levels
-            float refRange     = setupHigh + rangeSize * targetSpacing
-            float tgtStepRange = rangeSize * (targetStart - targetSpacing)
-            float entryRange   = refRange + rangeSize * gwBelow / 2
-            float invalidRange = refRange + rangeSize * gwBelow
-
-            // Calculate ATR-based SHORT levels
-            float atrVal      = filterATR
-            float entryATR    = setupHigh - atrVal * gwAbove
-            float invalidATR  = setupHigh + atrVal * invalidationFib
-            float tgt1ATR     = entryATR - atrVal * targetSpacing
-            float tgt2ATR     = entryATR - 2 * atrVal * targetSpacing
-            float tgt3ATR     = entryATR - 3 * atrVal * targetSpacing
-
-            // Switch: if range-based entry is reachable (below manipulation peak), use it
-            bool useRangeBased = entryRange <= nz(po3High, setupHigh)
-
-            if useRangeBased
-                finalEntry   := entryRange
-                finalEntryHi := refRange + rangeSize * gwBelow
-                finalInvalid := invalidRange
-                finalTgt1    := refRange
-                finalTgt2    := refRange - tgtStepRange
-                finalTgt3    := refRange - tgtStepRange * 2
+            if rangeTrigger
+                // Range-based SHORT levels (1M case: price reached range entry)
+                float refR     = setupHigh + rangeSize * targetSpacing
+                float tgtStepR = rangeSize * (targetStart - targetSpacing)
+                finalEntry   := refR + rangeSize * gwBelow / 2
+                finalEntryHi := refR + rangeSize * gwBelow
+                finalInvalid := refR + rangeSize * gwBelow
+                finalTgt1    := refR
+                finalTgt2    := refR - tgtStepR
+                finalTgt3    := refR - tgtStepR * 2
             else
-                finalEntry   := entryATR
+                // ATR-based SHORT levels (10M case: range entry unreachable)
+                float atrVal  = filterATR
+                finalEntry   := setupHigh - atrVal * gwAbove
                 finalEntryHi := setupHigh + atrVal * gwBelow
-                finalInvalid := invalidATR
-                finalTgt1    := tgt1ATR
-                finalTgt2    := tgt2ATR
-                finalTgt3    := tgt3ATR
+                finalInvalid := setupHigh + atrVal * invalidationFib
+                finalTgt1    := finalEntry - atrVal * targetSpacing
+                finalTgt2    := finalEntry - 2 * atrVal * targetSpacing
+                finalTgt3    := finalEntry - 3 * atrVal * targetSpacing
 
         // Draw Entry level (Golden Zone)
         if showEntry

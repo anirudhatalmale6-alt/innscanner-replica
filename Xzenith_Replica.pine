@@ -147,6 +147,8 @@ var bool  passedPivotSweep  = false
 var bool  passedLongSweep   = false
 var float po3High           = na
 var int   po3HighBar        = na
+var float po3Low            = na
+var int   po3LowBar         = na
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -254,6 +256,8 @@ if sessionEnd
         passedLongSweep  := false
         po3High          := na
         po3HighBar       := na
+        po3Low           := na
+        po3LowBar        := na
         po3Waiting       := true
         setupsToday     += 1
     else
@@ -294,19 +298,25 @@ if po3Waiting and not inSession
     // Track manipulation lows for LONG sweep detection
     if low < longSweepLevel
         passedLongSweep := true
+        if na(po3Low) or low < po3Low
+            po3Low    := low
+            po3LowBar := bar_index
+
+    // Swing high confirmation (shared by both modes)
+    bool swingHighConfirmed = not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
 
     // SHORT trigger depends on mode determined at session end
     bool shortTrigger = false
     if useRangeMode
-        // Range mode (1M): sweep above range entry + close back below it
-        shortTrigger := passedRangeEntry and close <= shortRangeEntry
+        // Range mode: sweep above range entry + swing high confirmed + close back below range entry
+        shortTrigger := passedRangeEntry and swingHighConfirmed and close <= shortRangeEntry
     else
-        // ATR mode (10M+): pivot confirmed + close back inside range
-        bool pivotConfirmed = passedPivotSweep and not na(po3HighBar) and (bar_index - po3HighBar >= pivotLookback)
-        shortTrigger := pivotConfirmed and close <= savedHigh
+        // ATR mode (10M+): sweep above session high + swing high confirmed + close back inside range
+        shortTrigger := passedPivotSweep and swingHighConfirmed and close <= savedHigh
 
-    // LONG trigger: sweep below invalidation + close back above entry
-    bool longTrigger = passedLongSweep and close >= longReturnLevel
+    // LONG trigger: sweep below invalidation + swing low confirmed + close back above entry
+    bool swingLowConfirmed = not na(po3LowBar) and (bar_index - po3LowBar >= pivotLookback)
+    bool longTrigger = passedLongSweep and swingLowConfirmed and close >= longReturnLevel
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

@@ -226,11 +226,12 @@ if inSession and liveActive
             liveTgt3    := sessionLow + rangeSize * (targetStart + targetSpacing * 2)
         else
             float avgGW = (gwAbove + gwBelow) / 2
-            liveEntry   := sessionHigh - rangeSize * gwAbove
-            liveInvalid := sessionHigh
-            liveTgt1    := sessionHigh - rangeSize * avgGW * 2
-            liveTgt2    := sessionHigh - rangeSize * avgGW * 3
-            liveTgt3    := sessionHigh - rangeSize * avgGW * 4
+            float ref   = sessionHigh + rangeSize * targetSpacing
+            liveInvalid := ref + rangeSize * gwAbove
+            liveEntry   := liveInvalid - rangeSize * avgGW
+            liveTgt1    := liveInvalid - rangeSize * avgGW * 2
+            liveTgt2    := liveInvalid - rangeSize * avgGW * 3
+            liveTgt3    := liveInvalid - rangeSize * avgGW * 4
 
         // Update High/Low lines and labels
         if showHighLow and not na(liveHighLine)
@@ -322,11 +323,12 @@ if sessionEnd
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
             float avgGW = (gwAbove + gwBelow) / 2
-            finalEntry   := setupHigh - rangeSize * gwAbove
-            finalInvalid := setupHigh
-            finalTgt1    := setupHigh - rangeSize * avgGW * 2
-            finalTgt2    := setupHigh - rangeSize * avgGW * 3
-            finalTgt3    := setupHigh - rangeSize * avgGW * 4
+            float ref   = setupHigh + rangeSize * targetSpacing
+            finalInvalid := ref + rangeSize * gwAbove
+            finalEntry   := finalInvalid - rangeSize * avgGW
+            finalTgt1    := finalInvalid - rangeSize * avgGW * 2
+            finalTgt2    := finalInvalid - rangeSize * avgGW * 3
+            finalTgt3    := finalInvalid - rangeSize * avgGW * 4
 
         // Update the live drawing objects to final values
         if showHighLow and not na(liveHighLine)

@@ -180,12 +180,13 @@ if sessionEnd
             tgt2        := setupLow + rangeSize * (targetStart + targetSpacing)
             tgt3        := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            // SHORT: entry at GW midpoint near High, targets below, invalidation above
-            entryLevel   := setupHigh - rangeSize * (gwAbove - gwBelow) / 2
-            invalidLevel := setupHigh + rangeSize * invalidationFib
-            tgt1        := setupHigh - rangeSize * targetStart
-            tgt2        := setupHigh - rangeSize * (targetStart + targetSpacing)
-            tgt3        := setupHigh - rangeSize * (targetStart + targetSpacing * 2)
+            // SHORT: levels measured from -0.618 extension above the range
+            float ref = setupHigh + rangeSize * targetSpacing
+            entryLevel   := ref + rangeSize * (gwAbove - gwBelow) / 2
+            invalidLevel := ref + rangeSize * gwAbove
+            tgt1        := ref - rangeSize * gwBelow
+            tgt2        := ref - rangeSize * gwBelow * 2
+            tgt3        := ref - rangeSize * gwBelow * 3
 
         newSetup := true
 

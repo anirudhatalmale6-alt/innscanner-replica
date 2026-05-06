@@ -149,6 +149,12 @@ var float po3High           = na
 var int   po3HighBar        = na
 var float po3Low            = na
 var int   po3LowBar         = na
+var float shortPullbackLow  = na
+var int   shortPullbackBar  = na
+var bool  shortChochReady   = false
+var float longPullbackHigh  = na
+var int   longPullbackBar   = na
+var bool  longChochReady    = false
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -258,6 +264,12 @@ if sessionEnd
         po3HighBar       := na
         po3Low           := na
         po3LowBar        := na
+        shortPullbackLow := na
+        shortPullbackBar := na
+        shortChochReady  := false
+        longPullbackHigh := na
+        longPullbackBar  := na
+        longChochReady   := false
         po3Waiting       := true
         setupsToday     += 1
     else
@@ -284,43 +296,51 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Track manipulation highs for pivot detection (ATR mode)
+    // Track manipulation highs for SHORT
     if high > savedHigh
         passedPivotSweep := true
-        if na(po3High) or high > po3High
-            po3High    := high
-            po3HighBar := bar_index
-
-    // Track range-based entry sweep (range mode)
     if high > shortRangeEntry
         passedRangeEntry := true
+    if (passedPivotSweep or passedRangeEntry)
+        if na(po3High) or high > po3High
+            po3High          := high
+            po3HighBar       := bar_index
+            shortPullbackLow := na
+            shortPullbackBar := na
+            shortChochReady  := false
 
-    // Track manipulation lows for LONG sweep detection
+    // Track manipulation lows for LONG
     if low < longSweepLevel
         passedLongSweep := true
         if na(po3Low) or low < po3Low
-            po3Low    := low
-            po3LowBar := bar_index
+            po3Low           := low
+            po3LowBar        := bar_index
+            longPullbackHigh := na
+            longPullbackBar  := na
+            longChochReady   := false
 
-    // Scale confirmation bars: ensure ~40 min of confirmation regardless of timeframe
-    int tfMinutes = math.max(timeframe.in_seconds() / 60, 1)
-    int confirmBars = math.max(pivotLookback, pivotLookback * 4 / tfMinutes)
+    // SHORT ChoCh: after manipulation peak, track pullback low → confirm swing → break = trigger
+    bool shortSweepDone = useRangeMode ? passedRangeEntry : passedPivotSweep
+    if shortSweepDone and not na(po3HighBar) and bar_index > po3HighBar
+        if not shortChochReady
+            if na(shortPullbackLow) or low <= shortPullbackLow
+                shortPullbackLow := low
+                shortPullbackBar := bar_index
+            elif not na(shortPullbackBar) and (bar_index - shortPullbackBar >= pivotLookback)
+                shortChochReady := true
 
-    // Swing high confirmation (shared by both modes)
-    bool swingHighConfirmed = not na(po3HighBar) and (bar_index - po3HighBar >= confirmBars)
+    bool shortTrigger = shortChochReady and close < shortPullbackLow
 
-    // SHORT trigger depends on mode determined at session end
-    bool shortTrigger = false
-    if useRangeMode
-        // Range mode: sweep above range entry + swing high confirmed + close back below range entry
-        shortTrigger := passedRangeEntry and swingHighConfirmed and close <= shortRangeEntry
-    else
-        // ATR mode (10M+): sweep above session high + swing high confirmed + close back inside range
-        shortTrigger := passedPivotSweep and swingHighConfirmed and close <= savedHigh
+    // LONG ChoCh: after sweep low, track pullback high → confirm swing → break = trigger
+    if passedLongSweep and not na(po3LowBar) and bar_index > po3LowBar
+        if not longChochReady
+            if na(longPullbackHigh) or high >= longPullbackHigh
+                longPullbackHigh := high
+                longPullbackBar  := bar_index
+            elif not na(longPullbackBar) and (bar_index - longPullbackBar >= pivotLookback)
+                longChochReady := true
 
-    // LONG trigger: sweep below invalidation + swing low confirmed + close back above entry
-    bool swingLowConfirmed = not na(po3LowBar) and (bar_index - po3LowBar >= confirmBars)
-    bool longTrigger = passedLongSweep and swingLowConfirmed and close >= longReturnLevel
+    bool longTrigger = longChochReady and close > longPullbackHigh
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

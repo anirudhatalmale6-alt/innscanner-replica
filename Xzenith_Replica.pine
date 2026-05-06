@@ -353,11 +353,11 @@ if po3Waiting and not inSession
     if passedLongSweep and not longGWReady and not na(po3LowBar) and bar_index - po3LowBar >= pivotLookback
         longGWReady := true
 
-    // SHORT trigger: close must be INSIDE the GW zone (between lower and upper)
-    bool shortTrigger = shortGWReady and close >= shortGW_lower and close <= shortGW_upper
+    // SHORT trigger: candle touches or crosses the GW zone (price reached the entry area)
+    bool shortTrigger = shortGWReady and low <= shortGW_upper and high >= shortGW_lower
 
-    // LONG trigger: close must be INSIDE the GW zone (between lower and upper)
-    bool longTrigger = longGWReady and close >= longGW_lower and close <= longGW_upper
+    // LONG trigger: candle touches or crosses the GW zone (price reached the entry area)
+    bool longTrigger = longGWReady and high >= longGW_lower and low <= longGW_upper
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

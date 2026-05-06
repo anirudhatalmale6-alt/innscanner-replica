@@ -150,8 +150,6 @@ var int   po3LowBar         = na
 // Pre-calculated GW zones (set at session end)
 var float shortGWA_upper    = na
 var float shortGWA_lower    = na
-var float shortGWB_upper    = na
-var float shortGWB_lower    = na
 var float longGW_upper      = na
 var float longGW_lower      = na
 
@@ -253,10 +251,6 @@ if sessionEnd
         shortGWA_upper := refR + savedRange * gwBelow
         shortRangeEntry := shortGWA_lower
 
-        // Pre-calculate Formula B SHORT GW (near session high)
-        shortGWB_upper := sessionHigh - savedRange * (gwBelow - gwAbove)
-        shortGWB_lower := sessionHigh - savedRange * gwAbove * targetStart
-
         // Pre-calculate LONG GW (near session low)
         longGW_lower := sessionLow + savedRange * (gwAbove - gwBelow) / 2
         longGW_upper := sessionLow + savedRange * gwAbove
@@ -343,13 +337,16 @@ if po3Waiting and not inSession
         float rangeEntryDist = shortRangeEntry - savedHigh
         float manipPeakDist  = nz(po3High, savedHigh) - savedHigh
         float peakRatio      = rangeEntryDist > 0 ? manipPeakDist / rangeEntryDist : 0.0
-        useRangeFormula := peakRatio >= 0.7 and peakRatio <= 1.3
+        useRangeFormula := peakRatio >= 0.5 and peakRatio <= 1.5
         if useRangeFormula
             shortGW_upper := shortGWA_upper
             shortGW_lower := shortGWA_lower
         else
-            shortGW_upper := shortGWB_upper
-            shortGW_lower := shortGWB_lower
+            float manipRange = po3High - savedLow
+            float gwMid      = po3High - manipRange * 0.618
+            float gwHalf     = savedRange * gwBelow / 2
+            shortGW_upper := gwMid + gwHalf
+            shortGW_lower := gwMid - gwHalf
         shortGWReady := true
 
     // LONG: after trough confirmed (no new low for pivotLookback bars), arm trigger
@@ -394,12 +391,12 @@ if po3Waiting and not inSession
                 finalTgt2    := finalInvalid - 2 * stepA
                 finalTgt3    := finalInvalid - 3 * stepA
             else
-                // Formula B: GW near session high
-                finalInvalid := setupHigh + rangeSize * (invalidationFib - gwBelow)
-                finalTgt1    := finalEntryHi - rangeSize * gwAbove
-                float stepB  = rangeSize * invalidationFib / 2
-                finalTgt2    := finalTgt1 - stepB
-                finalTgt3    := finalTgt2 - stepB
+                // Formula B: Fibonacci retracement of manipulation move
+                float manipRange = po3High - setupLow
+                finalInvalid := po3High - manipRange * 0.5
+                finalTgt1    := po3High - manipRange * 0.7
+                finalTgt2    := po3High - manipRange * 0.786
+                finalTgt3    := po3High - manipRange * 0.886
 
         // Draw Entry level (Golden Zone)
         if showEntry

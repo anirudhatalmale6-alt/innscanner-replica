@@ -140,8 +140,6 @@ var float savedRange        = na
 var float savedATR          = na
 var bool  useRangeFormula   = false
 var float shortRangeEntry   = na
-var float longSweepLevel    = na
-var float longReturnLevel   = na
 var bool  passedRangeEntry  = false
 var bool  passedPivotSweep  = false
 var bool  passedLongSweep   = false
@@ -249,9 +247,6 @@ if sessionEnd
         shortRangeEntry := refRange + rangeCalc * gwBelow / 2
 
         // LONG: sweep below invalidation level (far from low), return above entry level
-        longSweepLevel  := sessionLow - rangeCalc * invalidationFib
-        longReturnLevel := sessionLow + rangeCalc * (gwAbove - gwBelow) / 2
-
         passedRangeEntry := false
         passedPivotSweep := false
         passedLongSweep  := false
@@ -291,28 +286,53 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Track manipulation highs for SHORT
+    // Track new manipulation extremes
+    bool newHigh = false
+    bool newLow  = false
+
+    // SHORT sweep: track new highs above session high
     if high > savedHigh
-        passedPivotSweep := true
-    if high > shortRangeEntry
-        passedRangeEntry := true
-    if (passedPivotSweep or passedRangeEntry)
         if na(po3High) or high > po3High
             po3High          := high
             po3HighBar       := bar_index
             shortPullbackLow := na
             shortPullbackBar := na
             shortChochReady  := false
+            newHigh          := true
+        if not passedPivotSweep and not passedLongSweep
+            passedPivotSweep := true
+    if high > shortRangeEntry and not passedRangeEntry
+        passedRangeEntry := true
+        newHigh          := true
 
-    // Track manipulation lows for LONG
-    if low < longSweepLevel
-        passedLongSweep := true
+    // LONG sweep: track new lows below session low
+    if low < savedLow
         if na(po3Low) or low < po3Low
             po3Low           := low
             po3LowBar        := bar_index
             longPullbackHigh := na
             longPullbackBar  := na
             longChochReady   := false
+            newLow           := true
+        if not passedLongSweep
+            passedLongSweep := true
+            newLow          := true
+
+    // Direction priority: LONG sweep cancels SHORT
+    if newLow
+        passedPivotSweep := false
+        passedRangeEntry := false
+        shortChochReady  := false
+        shortPullbackLow := na
+        shortPullbackBar := na
+
+    // Deep SHORT sweep (past range entry) can override LONG
+    if newHigh and passedRangeEntry and passedLongSweep
+        passedPivotSweep := true
+        passedLongSweep  := false
+        longChochReady   := false
+        longPullbackHigh := na
+        longPullbackBar  := na
 
     // SHORT ChoCh: after manipulation peak, track pullback low -> confirm swing -> break = trigger
     if passedPivotSweep and not na(po3HighBar) and bar_index > po3HighBar
@@ -357,13 +377,11 @@ if po3Waiting and not inSession
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            // Decide formula per-setup: compare manipulation peak to range entry level
-            float entryDist = shortRangeEntry - setupHigh
-            float manipDist = nz(po3High, setupHigh) - setupHigh
-            useRangeFormula := manipDist > 0 and entryDist > 0 and manipDist / entryDist > 0.65
+            // Use range formula if manipulation actually reached the range entry zone
+            useRangeFormula := passedRangeEntry
 
             if useRangeFormula
-                // Range-based SHORT levels (manipulation reached deep into entry zone)
+                // Range-based SHORT levels (manipulation reached into range entry zone)
                 float refR     = setupHigh + rangeSize * targetSpacing
                 float tgtStepR = rangeSize * (targetStart - targetSpacing)
                 finalEntry   := refR + rangeSize * gwBelow / 2

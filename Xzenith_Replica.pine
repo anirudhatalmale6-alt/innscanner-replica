@@ -146,12 +146,20 @@ var float po3High           = na
 var int   po3HighBar        = na
 var float po3Low            = na
 var int   po3LowBar         = na
-var float shortPullbackLow  = na
-var int   shortPullbackBar  = na
-var bool  shortChochReady   = false
-var float longPullbackHigh  = na
-var int   longPullbackBar   = na
-var bool  longChochReady    = false
+
+// Pre-calculated GW zones (set at session end)
+var float shortGWA_upper    = na
+var float shortGWA_lower    = na
+var float shortGWB_upper    = na
+var float shortGWB_lower    = na
+var float longGW_upper      = na
+var float longGW_lower      = na
+
+// Selected GW zone + trigger readiness
+var float shortGW_upper     = na
+var float shortGW_lower     = na
+var bool  shortGWReady      = false
+var bool  longGWReady       = false
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -239,12 +247,20 @@ if sessionEnd
         savedLow   := sessionLow
         savedRange := sessionHigh - sessionLow
 
-        // Pre-calculate range-based entry (used for sweep detection + formula selection at trigger)
-        float rangeCalc  = savedRange
-        float refRange   = sessionHigh + rangeCalc * targetSpacing
-        shortRangeEntry := refRange + rangeCalc * gwBelow / 2
+        // Pre-calculate Formula A SHORT GW (above session high)
+        float refR = sessionHigh + savedRange * targetSpacing
+        shortGWA_lower := refR + savedRange * gwBelow / 2
+        shortGWA_upper := refR + savedRange * gwBelow
+        shortRangeEntry := shortGWA_lower
 
-        // LONG: sweep below invalidation level (far from low), return above entry level
+        // Pre-calculate Formula B SHORT GW (near session high)
+        shortGWB_upper := sessionHigh - savedRange * (gwBelow - gwAbove)
+        shortGWB_lower := sessionHigh - savedRange * gwAbove * targetStart
+
+        // Pre-calculate LONG GW (near session low)
+        longGW_lower := sessionLow + savedRange * (gwAbove - gwBelow) / 2
+        longGW_upper := sessionLow + savedRange * gwAbove
+
         passedRangeEntry := false
         passedPivotSweep := false
         passedLongSweep  := false
@@ -252,12 +268,10 @@ if sessionEnd
         po3HighBar       := na
         po3Low           := na
         po3LowBar        := na
-        shortPullbackLow := na
-        shortPullbackBar := na
-        shortChochReady  := false
-        longPullbackHigh := na
-        longPullbackBar  := na
-        longChochReady   := false
+        shortGWReady     := false
+        longGWReady      := false
+        shortGW_upper    := na
+        shortGW_lower    := na
         po3Waiting       := true
         setupsToday     += 1
     else
@@ -284,19 +298,16 @@ if po3Waiting and not inSession
         line.set_x2(liveHighLine, bar_index + lineExtend)
         line.set_x2(liveLowLine, bar_index + lineExtend)
 
-    // Track new manipulation extremes
     bool newHigh = false
     bool newLow  = false
 
     // SHORT sweep: track new highs above session high
     if high > savedHigh
         if na(po3High) or high > po3High
-            po3High          := high
-            po3HighBar       := bar_index
-            shortPullbackLow := na
-            shortPullbackBar := na
-            shortChochReady  := false
-            newHigh          := true
+            po3High      := high
+            po3HighBar   := bar_index
+            shortGWReady := false
+            newHigh      := true
         if not passedPivotSweep and not passedLongSweep
             passedPivotSweep := true
     if high > shortRangeEntry and not passedRangeEntry
@@ -307,12 +318,10 @@ if po3Waiting and not inSession
     float longMinSweep = savedLow - savedRange * 0.1
     if low < longMinSweep
         if na(po3Low) or low < po3Low
-            po3Low           := low
-            po3LowBar        := bar_index
-            longPullbackHigh := na
-            longPullbackBar  := na
-            longChochReady   := false
-            newLow           := true
+            po3Low      := low
+            po3LowBar   := bar_index
+            longGWReady := false
+            newLow      := true
         if not passedLongSweep
             passedLongSweep := true
             newLow          := true
@@ -321,39 +330,37 @@ if po3Waiting and not inSession
     if newLow
         passedPivotSweep := false
         passedRangeEntry := false
-        shortChochReady  := false
-        shortPullbackLow := na
-        shortPullbackBar := na
+        shortGWReady     := false
 
     // Deep SHORT sweep (past range entry) can override LONG
     if newHigh and passedRangeEntry and passedLongSweep
         passedPivotSweep := true
         passedLongSweep  := false
-        longChochReady   := false
-        longPullbackHigh := na
-        longPullbackBar  := na
+        longGWReady      := false
 
-    // SHORT ChoCh: after manipulation peak, track pullback low -> confirm swing -> break = trigger
-    if passedPivotSweep and not na(po3HighBar) and bar_index > po3HighBar
-        if not shortChochReady
-            if na(shortPullbackLow) or low <= shortPullbackLow
-                shortPullbackLow := low
-                shortPullbackBar := bar_index
-            else if not na(shortPullbackBar) and (bar_index - shortPullbackBar >= pivotLookback)
-                shortChochReady := true
+    // SHORT: after peak confirmed (no new high for pivotLookback bars), select GW and arm trigger
+    if passedPivotSweep and not shortGWReady and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
+        float rangeEntryDist = shortRangeEntry - savedHigh
+        float manipPeakDist  = nz(po3High, savedHigh) - savedHigh
+        float peakRatio      = rangeEntryDist > 0 ? manipPeakDist / rangeEntryDist : 0.0
+        useRangeFormula := peakRatio >= 0.7 and peakRatio <= 1.3
+        if useRangeFormula
+            shortGW_upper := shortGWA_upper
+            shortGW_lower := shortGWA_lower
+        else
+            shortGW_upper := shortGWB_upper
+            shortGW_lower := shortGWB_lower
+        shortGWReady := true
 
-    bool shortTrigger = shortChochReady and close < shortPullbackLow
+    // LONG: after trough confirmed (no new low for pivotLookback bars), arm trigger
+    if passedLongSweep and not longGWReady and not na(po3LowBar) and bar_index - po3LowBar >= pivotLookback
+        longGWReady := true
 
-    // LONG ChoCh: after sweep low, track pullback high → confirm swing → break = trigger
-    if passedLongSweep and not na(po3LowBar) and bar_index > po3LowBar
-        if not longChochReady
-            if na(longPullbackHigh) or high >= longPullbackHigh
-                longPullbackHigh := high
-                longPullbackBar  := bar_index
-            else if not na(longPullbackBar) and (bar_index - longPullbackBar >= pivotLookback)
-                longChochReady := true
+    // SHORT trigger: close enters GW zone from above (price returns to entry after manipulation)
+    bool shortTrigger = shortGWReady and close <= shortGW_upper
 
-    bool longTrigger = longChochReady and close > longPullbackHigh
+    // LONG trigger: close enters GW zone from below (price returns to entry after manipulation)
+    bool longTrigger = longGWReady and close >= longGW_lower
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger
@@ -369,33 +376,25 @@ if po3Waiting and not inSession
         float finalTgt3    = na
 
         if setupIsLong
-            finalEntry   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
-            finalEntryHi := setupLow + rangeSize * gwAbove
+            finalEntry   := longGW_lower
+            finalEntryHi := longGW_upper
             finalInvalid := setupLow - rangeSize * gwBelow
             finalTgt1    := setupHigh - rangeSize * gwAbove
             finalTgt2    := finalTgt1 + rangeSize * targetSpacing
             finalTgt3    := finalTgt1 + 2 * rangeSize * targetSpacing
         else
-            // Decide formula based on manipulation peak vs range entry zone
-            float rangeEntryDist = shortRangeEntry - setupHigh
-            float manipPeakDist  = nz(po3High, setupHigh) - setupHigh
-            float peakRatio      = rangeEntryDist > 0 ? manipPeakDist / rangeEntryDist : 0.0
-            useRangeFormula := peakRatio >= 0.7 and peakRatio <= 1.3
-
+            finalEntry   := shortGW_lower
+            finalEntryHi := shortGW_upper
             if useRangeFormula
-                // Formula A: GW above session high (manipulation near range entry)
+                // Formula A: GW above session high
                 float refR     = setupHigh + rangeSize * targetSpacing
-                finalEntry   := refR + rangeSize * gwBelow / 2
-                finalEntryHi := refR + rangeSize * gwBelow
                 finalInvalid := refR + rangeSize * invalidationFib
                 float stepA  = (finalInvalid - finalEntry) / 4
                 finalTgt1    := finalInvalid - stepA
                 finalTgt2    := finalInvalid - 2 * stepA
                 finalTgt3    := finalInvalid - 3 * stepA
             else
-                // Formula B: GW near session high (manipulation went past entry)
-                finalEntryHi := setupHigh - rangeSize * (gwBelow - gwAbove)
-                finalEntry   := setupHigh - rangeSize * gwAbove * targetStart
+                // Formula B: GW near session high
                 finalInvalid := setupHigh + rangeSize * (invalidationFib - gwBelow)
                 finalTgt1    := finalEntryHi - rangeSize * gwAbove
                 float stepB  = rangeSize * invalidationFib / 2

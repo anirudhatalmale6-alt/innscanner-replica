@@ -137,7 +137,6 @@ var bool  po3Waiting        = false
 var float savedHigh         = na
 var float savedLow          = na
 var float savedRange        = na
-var float savedATR          = na
 var bool  useRangeFormula   = false
 var float shortRangeEntry   = na
 var bool  passedRangeEntry  = false
@@ -239,7 +238,6 @@ if sessionEnd
         savedHigh  := sessionHigh
         savedLow   := sessionLow
         savedRange := sessionHigh - sessionLow
-        savedATR   := filterATR
 
         // Pre-calculate range-based entry (used for sweep detection + formula selection at trigger)
         float rangeCalc  = savedRange
@@ -373,22 +371,20 @@ if po3Waiting and not inSession
         if setupIsLong
             finalEntry   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
             finalEntryHi := setupLow + rangeSize * gwAbove
-            float gwMid   = (finalEntry + finalEntryHi) / 2
-            float atrL    = savedATR
-            finalInvalid := setupLow - atrL * invalidationFib
-            finalTgt1    := gwMid + atrL * targetSpacing
-            finalTgt2    := gwMid + 2 * atrL * targetSpacing
-            finalTgt3    := gwMid + 3 * atrL * targetSpacing
+            finalInvalid := setupLow - rangeSize * gwBelow
+            finalTgt1    := setupLow + rangeSize * (targetStart - targetSpacing)
+            float longStep = rangeSize * gwAbove / 2
+            finalTgt2    := finalTgt1 + longStep
+            finalTgt3    := finalTgt1 + 2 * longStep
         else
-            // Use range formula if manipulation peak is near the range entry zone
-            // If peak went way past entry zone (>1.3x), ATR formula fits better
+            // Decide formula based on manipulation peak vs range entry zone
             float rangeEntryDist = shortRangeEntry - setupHigh
             float manipPeakDist  = nz(po3High, setupHigh) - setupHigh
             float peakRatio      = rangeEntryDist > 0 ? manipPeakDist / rangeEntryDist : 0.0
             useRangeFormula := peakRatio >= 0.7 and peakRatio <= 1.3
 
             if useRangeFormula
-                // Range-based SHORT levels (manipulation reached into range entry zone)
+                // Formula A: GW above session high (manipulation near range entry)
                 float refR     = setupHigh + rangeSize * targetSpacing
                 finalEntry   := refR + rangeSize * gwBelow / 2
                 finalEntryHi := refR + rangeSize * gwBelow
@@ -397,14 +393,13 @@ if po3Waiting and not inSession
                 finalTgt2    := setupHigh - rangeSize * targetStart
                 finalTgt3    := setupHigh - 2 * rangeSize * targetStart
             else
-                // ATR-based SHORT levels (manipulation stayed near session high)
-                float atrVal  = savedATR
-                finalEntry   := setupHigh - atrVal * gwAbove
-                finalEntryHi := setupHigh + atrVal * gwBelow
-                finalInvalid := setupHigh + atrVal * invalidationFib
-                finalTgt1    := finalEntry - atrVal * targetSpacing
-                finalTgt2    := finalEntry - 2 * atrVal * targetSpacing
-                finalTgt3    := finalEntry - 3 * atrVal * targetSpacing
+                // Formula B: GW below session high (manipulation went past entry)
+                finalEntry   := setupHigh - rangeSize * targetSpacing
+                finalEntryHi := setupHigh - rangeSize * (targetSpacing - gwBelow)
+                finalInvalid := setupHigh - rangeSize * gwAbove
+                finalTgt1    := finalEntryHi - rangeSize * invalidationFib
+                finalTgt2    := finalEntryHi - 2 * rangeSize * invalidationFib
+                finalTgt3    := finalEntryHi - 3 * rangeSize * invalidationFib
 
         // Draw Entry level (Golden Zone)
         if showEntry

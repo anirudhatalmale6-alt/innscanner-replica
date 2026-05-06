@@ -305,8 +305,9 @@ if po3Waiting and not inSession
         passedRangeEntry := true
         newHigh          := true
 
-    // LONG sweep: track new lows below session low
-    if low < savedLow
+    // LONG sweep: require minimum depth (10% of range below session low)
+    float longMinSweep = savedLow - savedRange * 0.1
+    if low < longMinSweep
         if na(po3Low) or low < po3Low
             po3Low           := low
             po3LowBar        := bar_index
@@ -377,8 +378,12 @@ if po3Waiting and not inSession
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            // Use range formula if manipulation actually reached the range entry zone
-            useRangeFormula := passedRangeEntry
+            // Use range formula if manipulation peak is near the range entry zone
+            // If peak went way past entry zone (>1.3x), ATR formula fits better
+            float rangeEntryDist = shortRangeEntry - setupHigh
+            float manipPeakDist  = nz(po3High, setupHigh) - setupHigh
+            float peakRatio      = rangeEntryDist > 0 ? manipPeakDist / rangeEntryDist : 0.0
+            useRangeFormula := peakRatio >= 0.7 and peakRatio <= 1.3
 
             if useRangeFormula
                 // Range-based SHORT levels (manipulation reached into range entry zone)

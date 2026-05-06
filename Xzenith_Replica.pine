@@ -308,8 +308,8 @@ if po3Waiting and not inSession
         passedRangeEntry := true
         newHigh          := true
 
-    // LONG sweep: require minimum depth (10% of range below session low)
-    float longMinSweep = savedLow - savedRange * 0.1
+    // LONG sweep: require minimum depth (5% of range below session low)
+    float longMinSweep = savedLow - savedRange * 0.05
     if low < longMinSweep
         if na(po3Low) or low < po3Low
             po3Low      := low
@@ -353,11 +353,11 @@ if po3Waiting and not inSession
     if passedLongSweep and not longGWReady and not na(po3LowBar) and bar_index - po3LowBar >= pivotLookback
         longGWReady := true
 
-    // SHORT trigger: close enters GW zone from above (price returns to entry after manipulation)
-    bool shortTrigger = shortGWReady and close <= shortGW_upper
+    // SHORT trigger: close must be INSIDE the GW zone (between lower and upper)
+    bool shortTrigger = shortGWReady and close >= shortGW_lower and close <= shortGW_upper
 
-    // LONG trigger: close enters GW zone from below (price returns to entry after manipulation)
-    bool longTrigger = longGWReady and close >= longGW_lower
+    // LONG trigger: close must be INSIDE the GW zone (between lower and upper)
+    bool longTrigger = longGWReady and close >= longGW_lower and close <= longGW_upper
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

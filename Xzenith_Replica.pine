@@ -372,10 +372,9 @@ if po3Waiting and not inSession
             finalEntry   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
             finalEntryHi := setupLow + rangeSize * gwAbove
             finalInvalid := setupLow - rangeSize * gwBelow
-            finalTgt1    := setupLow + rangeSize * (targetStart - targetSpacing)
-            float longStep = rangeSize * gwAbove / 2
-            finalTgt2    := finalTgt1 + longStep
-            finalTgt3    := finalTgt1 + 2 * longStep
+            finalTgt1    := setupHigh - rangeSize * gwAbove
+            finalTgt2    := finalTgt1 + rangeSize * targetSpacing
+            finalTgt3    := finalTgt1 + 2 * rangeSize * targetSpacing
         else
             // Decide formula based on manipulation peak vs range entry zone
             float rangeEntryDist = shortRangeEntry - setupHigh
@@ -389,17 +388,19 @@ if po3Waiting and not inSession
                 finalEntry   := refR + rangeSize * gwBelow / 2
                 finalEntryHi := refR + rangeSize * gwBelow
                 finalInvalid := refR + rangeSize * invalidationFib
-                finalTgt1    := setupHigh
-                finalTgt2    := setupHigh - rangeSize * targetStart
-                finalTgt3    := setupHigh - 2 * rangeSize * targetStart
+                float stepA  = (finalInvalid - finalEntry) / 4
+                finalTgt1    := finalInvalid - stepA
+                finalTgt2    := finalInvalid - 2 * stepA
+                finalTgt3    := finalInvalid - 3 * stepA
             else
-                // Formula B: GW below session high (manipulation went past entry)
-                finalEntry   := setupHigh - rangeSize * targetSpacing
-                finalEntryHi := setupHigh - rangeSize * (targetSpacing - gwBelow)
-                finalInvalid := setupHigh - rangeSize * gwAbove
-                finalTgt1    := finalEntryHi - rangeSize * invalidationFib
-                finalTgt2    := finalEntryHi - 2 * rangeSize * invalidationFib
-                finalTgt3    := finalEntryHi - 3 * rangeSize * invalidationFib
+                // Formula B: GW near session high (manipulation went past entry)
+                finalEntryHi := setupHigh - rangeSize * (gwBelow - gwAbove)
+                finalEntry   := setupHigh - rangeSize * gwAbove * targetStart
+                finalInvalid := setupHigh + rangeSize * (invalidationFib - gwBelow)
+                finalTgt1    := finalEntryHi - rangeSize * gwAbove
+                float stepB  = rangeSize * invalidationFib / 2
+                finalTgt2    := finalTgt1 - stepB
+                finalTgt3    := finalTgt2 - stepB
 
         // Draw Entry level (Golden Zone)
         if showEntry

@@ -138,7 +138,7 @@ var float savedHigh         = na
 var float savedLow          = na
 var float savedRange        = na
 var float savedATR          = na
-var bool  useRangeMode      = false
+var bool  useRangeFormula   = false
 var float shortRangeEntry   = na
 var float longSweepLevel    = na
 var float longReturnLevel   = na
@@ -243,12 +243,7 @@ if sessionEnd
         savedRange := sessionHigh - sessionLow
         savedATR   := filterATR
 
-        // Determine SHORT formula mode based on chart timeframe
-        // Range mode for 1M-5M (levels spread above session high)
-        // ATR mode for 10M+ (levels near session high)
-        useRangeMode := timeframe.in_seconds() <= 300
-
-        // SHORT: range-based entry level (used as trigger in range mode)
+        // Pre-calculate range-based entry (used for sweep detection + formula selection at trigger)
         float rangeCalc  = savedRange
         float refRange   = sessionHigh + rangeCalc * targetSpacing
         shortRangeEntry := refRange + rangeCalc * gwBelow / 2
@@ -319,9 +314,8 @@ if po3Waiting and not inSession
             longPullbackBar  := na
             longChochReady   := false
 
-    // SHORT ChoCh: after manipulation peak, track pullback low → confirm swing → break = trigger
-    bool shortSweepDone = useRangeMode ? passedRangeEntry : passedPivotSweep
-    if shortSweepDone and not na(po3HighBar) and bar_index > po3HighBar
+    // SHORT ChoCh: after manipulation peak, track pullback low -> confirm swing -> break = trigger
+    if passedPivotSweep and not na(po3HighBar) and bar_index > po3HighBar
         if not shortChochReady
             if na(shortPullbackLow) or low <= shortPullbackLow
                 shortPullbackLow := low
@@ -363,8 +357,13 @@ if po3Waiting and not inSession
             finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
             finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
         else
-            if useRangeMode
-                // Range-based SHORT levels (1M: range >> ATR)
+            // Decide formula per-setup: compare manipulation peak to range entry level
+            float entryDist = shortRangeEntry - setupHigh
+            float manipDist = nz(po3High, setupHigh) - setupHigh
+            useRangeFormula := manipDist > 0 and entryDist > 0 and manipDist / entryDist > 0.65
+
+            if useRangeFormula
+                // Range-based SHORT levels (manipulation reached deep into entry zone)
                 float refR     = setupHigh + rangeSize * targetSpacing
                 float tgtStepR = rangeSize * (targetStart - targetSpacing)
                 finalEntry   := refR + rangeSize * gwBelow / 2
@@ -374,7 +373,7 @@ if po3Waiting and not inSession
                 finalTgt2    := refR - tgtStepR
                 finalTgt3    := refR - tgtStepR * 2
             else
-                // ATR-based SHORT levels (10M+: range close to ATR)
+                // ATR-based SHORT levels (manipulation stayed near session high)
                 float atrVal  = savedATR
                 finalEntry   := setupHigh - atrVal * gwAbove
                 finalEntryHi := setupHigh + atrVal * gwBelow

@@ -302,9 +302,9 @@ if po3Waiting and not inSession
             po3Low    := low
             po3LowBar := bar_index
 
-    // Scale confirmation bars: ensure ~30 min of confirmation regardless of timeframe
+    // Scale confirmation bars: ensure ~40 min of confirmation regardless of timeframe
     int tfMinutes = math.max(timeframe.in_seconds() / 60, 1)
-    int confirmBars = math.max(pivotLookback, pivotLookback * 3 / tfMinutes)
+    int confirmBars = math.max(pivotLookback, pivotLookback * 4 / tfMinutes)
 
     // Swing high confirmation (shared by both modes)
     bool swingHighConfirmed = not na(po3HighBar) and (bar_index - po3HighBar >= confirmBars)

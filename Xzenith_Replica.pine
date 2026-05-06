@@ -326,7 +326,7 @@ if po3Waiting and not inSession
             if na(shortPullbackLow) or low <= shortPullbackLow
                 shortPullbackLow := low
                 shortPullbackBar := bar_index
-            elif not na(shortPullbackBar) and (bar_index - shortPullbackBar >= pivotLookback)
+            else if not na(shortPullbackBar) and (bar_index - shortPullbackBar >= pivotLookback)
                 shortChochReady := true
 
     bool shortTrigger = shortChochReady and close < shortPullbackLow
@@ -337,7 +337,7 @@ if po3Waiting and not inSession
             if na(longPullbackHigh) or high >= longPullbackHigh
                 longPullbackHigh := high
                 longPullbackBar  := bar_index
-            elif not na(longPullbackBar) and (bar_index - longPullbackBar >= pivotLookback)
+            else if not na(longPullbackBar) and (bar_index - longPullbackBar >= pivotLookback)
                 longChochReady := true
 
     bool longTrigger = longChochReady and close > longPullbackHigh

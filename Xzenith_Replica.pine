@@ -373,10 +373,12 @@ if po3Waiting and not inSession
         if setupIsLong
             finalEntry   := setupLow + rangeSize * (gwAbove - gwBelow) / 2
             finalEntryHi := setupLow + rangeSize * gwAbove
-            finalInvalid := setupLow - rangeSize * invalidationFib
-            finalTgt1    := setupLow + rangeSize * targetStart
-            finalTgt2    := setupLow + rangeSize * (targetStart + targetSpacing)
-            finalTgt3    := setupLow + rangeSize * (targetStart + targetSpacing * 2)
+            float gwMid   = (finalEntry + finalEntryHi) / 2
+            float atrL    = savedATR
+            finalInvalid := setupLow - atrL * invalidationFib
+            finalTgt1    := gwMid + atrL * targetSpacing
+            finalTgt2    := gwMid + 2 * atrL * targetSpacing
+            finalTgt3    := gwMid + 3 * atrL * targetSpacing
         else
             // Use range formula if manipulation peak is near the range entry zone
             // If peak went way past entry zone (>1.3x), ATR formula fits better
@@ -388,13 +390,12 @@ if po3Waiting and not inSession
             if useRangeFormula
                 // Range-based SHORT levels (manipulation reached into range entry zone)
                 float refR     = setupHigh + rangeSize * targetSpacing
-                float tgtStepR = rangeSize * (targetStart - targetSpacing)
                 finalEntry   := refR + rangeSize * gwBelow / 2
                 finalEntryHi := refR + rangeSize * gwBelow
-                finalInvalid := refR + rangeSize * gwBelow
-                finalTgt1    := refR
-                finalTgt2    := refR - tgtStepR
-                finalTgt3    := refR - tgtStepR * 2
+                finalInvalid := refR + rangeSize * invalidationFib
+                finalTgt1    := setupHigh
+                finalTgt2    := setupHigh - rangeSize * targetStart
+                finalTgt3    := setupHigh - 2 * rangeSize * targetStart
             else
                 // ATR-based SHORT levels (manipulation stayed near session high)
                 float atrVal  = savedATR

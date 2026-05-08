@@ -44,6 +44,9 @@ gwAbove = input.float(0.236, "GW Above Extreme (Fib)", minval=0, maxval=1.0, ste
 gwBelow = input.float(0.272, "GW Below Extreme (Fib)", minval=0, maxval=1.0, step=0.01,
      group="Golden Window",
      tooltip="Golden Window extends this far below the Low (for longs) or above the High (for shorts), as a ratio of the range.")
+obFibLevel = input.float(0.705, "OB Fibonacci Level", minval=0.3, maxval=0.95, step=0.005,
+     group="Golden Window",
+     tooltip="Fibonacci retracement of the full PO3 move (session extreme to manipulation peak) for Order Block detection. 0.705 = sqrt(0.5), standard ICT OTE level.")
 
 invalidationFib = input.float(0.414, "Invalidation Distance (Fib)", minval=0.05, maxval=2.0, step=0.01,
      group="Levels",
@@ -243,14 +246,10 @@ if sessionEnd
         savedLow   := sessionLow
         savedRange := sessionHigh - sessionLow
 
-        // Pre-calculate Formula A SHORT GW (above session high)
+        // Reference level for deep SHORT sweep detection (not GW itself)
         float refR = sessionHigh + savedRange * targetSpacing
         shortGWA_lower := refR + savedRange * gwBelow / 2
         shortGWA_upper := refR + savedRange * gwBelow
-
-        // Pre-calculate LONG GW (near session low)
-        longGW_lower := sessionLow + savedRange * (gwAbove - gwBelow) / 2
-        longGW_upper := sessionLow + savedRange * gwAbove
 
         passedRangeEntry := false
         passedPivotSweep := false
@@ -329,14 +328,42 @@ if po3Waiting and not inSession
         passedLongSweep  := false
         longGWReady      := false
 
-    // SHORT: after peak confirmed (no new high for pivotLookback bars), arm trigger with pre-calculated GW
+    // SHORT: after peak confirmed, find Order Block at 0.705 retracement of full PO3 move
     if passedPivotSweep and not shortGWReady and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
-        shortGW_upper := shortGWA_upper
-        shortGW_lower := shortGWA_lower
+        float refLevel = savedLow + (po3High - savedLow) * obFibLevel
+        int peakBarsAgo = bar_index - po3HighBar
+        bool obFound = false
+        int scanEnd = math.min(peakBarsAgo + 100, 498)
+        for i = peakBarsAgo to scanEnd
+            float bodyHi = math.max(open[i], close[i])
+            float bodyLo = math.min(open[i], close[i])
+            if bodyLo <= refLevel and bodyHi >= refLevel
+                shortGW_upper := bodyHi
+                shortGW_lower := bodyLo
+                obFound := true
+                break
+        if not obFound
+            shortGW_upper := refLevel + savedRange * gwBelow / 2
+            shortGW_lower := refLevel - savedRange * gwBelow / 2
         shortGWReady := true
 
-    // LONG: after trough confirmed (no new low for pivotLookback bars), arm trigger
+    // LONG: after trough confirmed, find Order Block at 0.705 retracement of full PO3 move
     if passedLongSweep and not longGWReady and not na(po3LowBar) and bar_index - po3LowBar >= pivotLookback
+        float refLevel = savedHigh - (savedHigh - po3Low) * obFibLevel
+        int troughBarsAgo = bar_index - po3LowBar
+        bool obFound = false
+        int scanEnd = math.min(troughBarsAgo + 100, 498)
+        for i = troughBarsAgo to scanEnd
+            float bodyHi = math.max(open[i], close[i])
+            float bodyLo = math.min(open[i], close[i])
+            if bodyLo <= refLevel and bodyHi >= refLevel
+                longGW_upper := bodyHi
+                longGW_lower := bodyLo
+                obFound := true
+                break
+        if not obFound
+            longGW_upper := refLevel + savedRange * gwAbove / 2
+            longGW_lower := refLevel - savedRange * gwAbove / 2
         longGWReady := true
 
     // SHORT trigger: candle touches or crosses the GW zone (price reached the entry area)

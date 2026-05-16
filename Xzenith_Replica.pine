@@ -160,6 +160,7 @@ var float shortGW_lower     = na
 var bool  shortGWReady      = false
 var bool  longGWReady       = false
 var bool  shortGWSkipped    = false
+var bool  longGWPriceAbove  = false
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -262,6 +263,7 @@ if sessionEnd
         shortGWReady     := false
         longGWReady      := false
         shortGWSkipped   := false
+        longGWPriceAbove := false
         shortGW_upper    := na
         shortGW_lower    := na
         po3Waiting       := true
@@ -311,10 +313,11 @@ if po3Waiting and not inSession
     float longMinSweep = savedLow - savedRange * 0.05
     if low < longMinSweep
         if na(po3Low) or low < po3Low
-            po3Low      := low
-            po3LowBar   := bar_index
-            longGWReady := false
-            newLow      := true
+            po3Low           := low
+            po3LowBar        := bar_index
+            longGWReady      := false
+            longGWPriceAbove := false
+            newLow           := true
         if not passedLongSweep
             passedLongSweep := true
             newLow          := true
@@ -331,6 +334,7 @@ if po3Waiting and not inSession
         passedPivotSweep := true
         passedLongSweep  := false
         longGWReady      := false
+        longGWPriceAbove := false
 
     // SHORT: after peak confirmed, find Order Block at 0.705 retracement of full PO3 move
     // Validation: refLevel must be near/above session high (within 10% of range), otherwise peak was premature
@@ -379,11 +383,15 @@ if po3Waiting and not inSession
             longGW_lower := savedLow - savedRange * gwAbove / 2
         longGWReady := true
 
+    // LONG retracement: price must move above GW zone before entry (prevents triggering during sweep)
+    if longGWReady and not longGWPriceAbove and low > longGW_upper
+        longGWPriceAbove := true
+
     // SHORT trigger: candle touches or crosses the GW zone (price reached the entry area)
     bool shortTrigger = shortGWReady and low <= shortGW_upper and high >= shortGW_lower
 
-    // LONG trigger: candle touches or crosses the GW zone (price reached the entry area)
-    bool longTrigger = longGWReady and high >= longGW_lower and low <= longGW_upper
+    // LONG trigger: requires price was above GW first, then retraces back down into it
+    bool longTrigger = longGWReady and longGWPriceAbove and high >= longGW_lower and low <= longGW_upper
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

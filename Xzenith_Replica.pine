@@ -303,7 +303,7 @@ if po3Waiting and not inSession
             shortGWReady   := false
             shortGWSkipped := false
             newHigh        := true
-        if not passedPivotSweep and not passedLongSweep
+        if not passedPivotSweep
             passedPivotSweep := true
     if high > shortGWA_lower and not passedRangeEntry
         passedRangeEntry := true
@@ -318,20 +318,12 @@ if po3Waiting and not inSession
             longGWReady      := false
             longGWPriceAbove := false
             newLow           := true
-        if not passedLongSweep
+        if not passedLongSweep and not passedPivotSweep
             passedLongSweep := true
             newLow          := true
 
-    // Direction priority: LONG sweep cancels SHORT
-    if newLow
-        passedPivotSweep := false
-        passedRangeEntry := false
-        shortGWReady     := false
-        shortGWSkipped   := false
-
-    // Deep SHORT sweep (past range entry) can override LONG
-    if newHigh and passedRangeEntry and passedLongSweep
-        passedPivotSweep := true
+    // SHORT always takes priority: cancel LONG when any SHORT sweep detected
+    if newHigh and passedLongSweep
         passedLongSweep  := false
         longGWReady      := false
         longGWPriceAbove := false
@@ -390,8 +382,8 @@ if po3Waiting and not inSession
     // SHORT trigger: candle touches or crosses the GW zone (price reached the entry area)
     bool shortTrigger = shortGWReady and low <= shortGW_upper and high >= shortGW_lower
 
-    // LONG trigger: requires price was above GW first, then retraces back down into it
-    bool longTrigger = longGWReady and longGWPriceAbove and high >= longGW_lower and low <= longGW_upper
+    // LONG trigger: only fires when no SHORT sweep occurred (SHORT always takes priority)
+    bool longTrigger = longGWReady and longGWPriceAbove and na(po3High) and high >= longGW_lower and low <= longGW_upper
 
     if shortTrigger or longTrigger
         setupIsLong := longTrigger and not shortTrigger

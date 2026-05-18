@@ -161,6 +161,8 @@ var bool  shortGWReady      = false
 var bool  longGWReady       = false
 var bool  shortGWSkipped    = false
 var bool  longGWPriceAbove  = false
+var bool  shortSweepReturn  = false
+var bool  longSweepReturn   = false
 
 // ============================================================================
 // DRAWING OBJECTS - High/Low lines (created at session start, updated live)
@@ -264,6 +266,8 @@ if sessionEnd
         longGWReady      := false
         shortGWSkipped   := false
         longGWPriceAbove := false
+        shortSweepReturn := false
+        longSweepReturn  := false
         shortGW_upper    := na
         shortGW_lower    := na
         po3Waiting       := true
@@ -297,6 +301,7 @@ if po3Waiting and not inSession
 
     // SHORT sweep: track new highs above session high
     if high > savedHigh
+        shortSweepReturn := false
         if na(po3High) or high > po3High
             po3High      := high
             po3HighBar   := bar_index
@@ -310,6 +315,8 @@ if po3Waiting and not inSession
         newHigh          := true
 
     // LONG sweep: require minimum depth (5% of range below session low)
+    if low < savedLow
+        longSweepReturn := false
     float longMinSweep = savedLow - savedRange * 0.05
     if low < longMinSweep
         if na(po3Low) or low < po3Low
@@ -327,67 +334,57 @@ if po3Waiting and not inSession
         passedLongSweep  := false
         longGWReady      := false
         longGWPriceAbove := false
+        longSweepReturn  := false
 
-    // SHORT: after peak confirmed, calculate GW based on sweep strength
-    if passedPivotSweep and not shortGWReady and not shortGWSkipped and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
-        float sweepRatio = (po3High - savedHigh) / savedRange
-        if sweepRatio < 0.10
-            // Modest sweep: use peak candle body as GW (entry at the manipulation candle itself)
+    // Track sweep returns (price returned to session range after manipulation)
+    if passedPivotSweep and not shortSweepReturn and high < savedHigh
+        shortSweepReturn := true
+    if passedLongSweep and not longSweepReturn and low > savedLow
+        longSweepReturn := true
+
+    // SHORT: after peak confirmed AND sweep returned below session high
+    if passedPivotSweep and shortSweepReturn and not shortGWReady and not shortGWSkipped and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
+        float refLevel = savedLow + (po3High - savedLow) * obFibLevel
+        if refLevel >= savedHigh - savedRange * 0.20
             int peakBarsAgo = bar_index - po3HighBar
-            shortGW_upper := math.max(open[peakBarsAgo], close[peakBarsAgo])
-            shortGW_lower := math.min(open[peakBarsAgo], close[peakBarsAgo])
+            bool obFound = false
+            int scanEnd = math.min(peakBarsAgo + 100, 498)
+            for i = peakBarsAgo to scanEnd
+                float bodyHi = math.max(open[i], close[i])
+                float bodyLo = math.min(open[i], close[i])
+                if bodyLo <= refLevel and bodyHi >= refLevel
+                    shortGW_upper := bodyHi
+                    shortGW_lower := bodyLo
+                    obFound := true
+                    break
+            if not obFound
+                shortGW_upper := refLevel + savedRange * gwBelow / 2
+                shortGW_lower := refLevel - savedRange * gwBelow / 2
             shortGWReady := true
         else
-            // Strong sweep: find Order Block at 0.705 retracement of full PO3 move
-            float refLevel = savedLow + (po3High - savedLow) * obFibLevel
-            if refLevel >= savedHigh - savedRange * 0.10
-                int peakBarsAgo = bar_index - po3HighBar
-                bool obFound = false
-                int scanEnd = math.min(peakBarsAgo + 100, 498)
-                for i = peakBarsAgo to scanEnd
-                    float bodyHi = math.max(open[i], close[i])
-                    float bodyLo = math.min(open[i], close[i])
-                    if bodyLo <= refLevel and bodyHi >= refLevel
-                        shortGW_upper := bodyHi
-                        shortGW_lower := bodyLo
-                        obFound := true
-                        break
-                if not obFound
-                    shortGW_upper := refLevel + savedRange * gwBelow / 2
-                    shortGW_lower := refLevel - savedRange * gwBelow / 2
-                shortGWReady := true
-            else
-                shortGWSkipped := true
+            shortGWSkipped := true
 
-    // LONG: after trough confirmed, calculate GW based on sweep strength
-    if passedLongSweep and not longGWReady and not na(po3LowBar) and bar_index - po3LowBar >= pivotLookback
-        float sweepRatio = (savedLow - po3Low) / savedRange
-        if sweepRatio < 0.10
-            // Modest sweep: use trough candle body as GW
+    // LONG: after trough confirmed AND sweep returned above session low
+    if passedLongSweep and longSweepReturn and not longGWReady and not na(po3LowBar) and bar_index - po3LowBar >= pivotLookback
+        float refLevel = savedHigh - (savedHigh - po3Low) * obFibLevel
+        if refLevel >= savedLow - savedRange * 0.50
             int troughBarsAgo = bar_index - po3LowBar
-            longGW_upper := math.max(open[troughBarsAgo], close[troughBarsAgo])
-            longGW_lower := math.min(open[troughBarsAgo], close[troughBarsAgo])
+            bool obFound = false
+            int scanEnd = math.min(troughBarsAgo + 100, 498)
+            for i = troughBarsAgo to scanEnd
+                float bodyHi = math.max(open[i], close[i])
+                float bodyLo = math.min(open[i], close[i])
+                if bodyLo <= refLevel and bodyHi >= refLevel
+                    longGW_upper := bodyHi
+                    longGW_lower := bodyLo
+                    obFound := true
+                    break
+            if not obFound
+                longGW_upper := refLevel + savedRange * gwAbove / 2
+                longGW_lower := refLevel - savedRange * gwAbove / 2
         else
-            // Strong sweep: find Order Block at 0.705 retracement of full PO3 move
-            float refLevel = savedHigh - (savedHigh - po3Low) * obFibLevel
-            if refLevel >= savedLow - savedRange * 0.50
-                int troughBarsAgo = bar_index - po3LowBar
-                bool obFound = false
-                int scanEnd = math.min(troughBarsAgo + 100, 498)
-                for i = troughBarsAgo to scanEnd
-                    float bodyHi = math.max(open[i], close[i])
-                    float bodyLo = math.min(open[i], close[i])
-                    if bodyLo <= refLevel and bodyHi >= refLevel
-                        longGW_upper := bodyHi
-                        longGW_lower := bodyLo
-                        obFound := true
-                        break
-                if not obFound
-                    longGW_upper := refLevel + savedRange * gwAbove / 2
-                    longGW_lower := refLevel - savedRange * gwAbove / 2
-            else
-                longGW_upper := savedLow + savedRange * gwAbove / 2
-                longGW_lower := savedLow - savedRange * gwAbove / 2
+            longGW_upper := savedLow + savedRange * gwAbove / 2
+            longGW_lower := savedLow - savedRange * gwAbove / 2
         longGWReady := true
 
     // LONG retracement: price must move above GW zone before entry (prevents triggering during sweep)

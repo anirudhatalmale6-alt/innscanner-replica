@@ -300,10 +300,10 @@ if po3Waiting and not inSession
     // SHORT sweep: track new highs above session high
     if high > savedHigh
         if na(po3High) or high > po3High
-            po3High      := high
-            po3HighBar   := bar_index
-            if not shortGWReady
-                shortGWSkipped := false
+            po3High        := high
+            po3HighBar     := bar_index
+            shortGWReady   := false
+            shortGWSkipped := false
             newHigh        := true
         if not passedPivotSweep
             passedPivotSweep := true
@@ -337,8 +337,8 @@ if po3Waiting and not inSession
     if passedLongSweep and not longSweepReturn and low > savedLow
         longSweepReturn := true
 
-    // SHORT: GW locks on first valid pivotLookback confirmation
-    if passedPivotSweep and not shortGWReady and not shortGWSkipped and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
+    // SHORT: dynamic GW — recalculates as po3High grows, half-lookback for faster confirmation
+    if passedPivotSweep and not shortGWReady and not shortGWSkipped and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback / 2
         float refLevel = savedLow + (po3High - savedLow) * obFibLevel
         if refLevel >= savedHigh - savedRange * 0.20
             int peakBarsAgo = bar_index - po3HighBar

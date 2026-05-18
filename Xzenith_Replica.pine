@@ -161,7 +161,6 @@ var bool  shortGWReady      = false
 var bool  longGWReady       = false
 var bool  shortGWSkipped    = false
 var bool  longGWPriceAbove  = false
-var bool  shortSweepReturn  = false
 var bool  longSweepReturn   = false
 
 // ============================================================================
@@ -266,7 +265,6 @@ if sessionEnd
         longGWReady      := false
         shortGWSkipped   := false
         longGWPriceAbove := false
-        shortSweepReturn := false
         longSweepReturn  := false
         shortGW_upper    := na
         shortGW_lower    := na
@@ -301,12 +299,11 @@ if po3Waiting and not inSession
 
     // SHORT sweep: track new highs above session high
     if high > savedHigh
-        shortSweepReturn := false
         if na(po3High) or high > po3High
             po3High      := high
             po3HighBar   := bar_index
-            shortGWReady   := false
-            shortGWSkipped := false
+            if not shortGWReady
+                shortGWSkipped := false
             newHigh        := true
         if not passedPivotSweep
             passedPivotSweep := true
@@ -336,14 +333,12 @@ if po3Waiting and not inSession
         longGWPriceAbove := false
         longSweepReturn  := false
 
-    // Track sweep returns (price returned to session range after manipulation)
-    if passedPivotSweep and not shortSweepReturn and high < savedHigh
-        shortSweepReturn := true
+    // Track LONG sweep return (price returned above session low after manipulation)
     if passedLongSweep and not longSweepReturn and low > savedLow
         longSweepReturn := true
 
-    // SHORT: after peak confirmed AND sweep returned below session high
-    if passedPivotSweep and shortSweepReturn and not shortGWReady and not shortGWSkipped and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
+    // SHORT: GW locks on first valid pivotLookback confirmation
+    if passedPivotSweep and not shortGWReady and not shortGWSkipped and not na(po3HighBar) and bar_index - po3HighBar >= pivotLookback
         float refLevel = savedLow + (po3High - savedLow) * obFibLevel
         if refLevel >= savedHigh - savedRange * 0.20
             int peakBarsAgo = bar_index - po3HighBar

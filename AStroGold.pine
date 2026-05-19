@@ -278,8 +278,8 @@ if barstate.islast
 // ALERTS
 // ═══════════════════════════════════════════════════════════════
 
-alertcondition(evBuy,  "Eclipse BUY",  "AStroGold Eclipse BUY at {{close}} | SL: " + str.tostring(eSL) + " | TP1: " + str.tostring(eTP1) + " | TP2: " + str.tostring(eTP2) + " | TP3: " + str.tostring(eTP3))
-alertcondition(evSell, "Eclipse SELL", "AStroGold Eclipse SELL at {{close}} | SL: " + str.tostring(eSL) + " | TP1: " + str.tostring(eTP1) + " | TP2: " + str.tostring(eTP2) + " | TP3: " + str.tostring(eTP3))
+alertcondition(evBuy,  "Eclipse BUY",  "AStroGold Eclipse BUY at {{close}}")
+alertcondition(evSell, "Eclipse SELL", "AStroGold Eclipse SELL at {{close}}")
 alertcondition(evTP1,  "Eclipse TP1",  "AStroGold Eclipse TP1 hit")
 alertcondition(evTP2,  "Eclipse TP2",  "AStroGold Eclipse TP2 hit")
 alertcondition(evTP3,  "Eclipse TP3",  "AStroGold Eclipse TP3 hit — trade complete")

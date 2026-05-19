@@ -12,20 +12,14 @@ eclTP1  = input.int(500,    "TP1 (pips)",              group="ECLIPSE")
 eclTP2  = input.int(1000,   "TP2 (pips)",              group="ECLIPSE")
 eclTP3M = input.float(3.0,  "TP3 (Multiplicador)",     group="ECLIPSE")
 
-// Signal mode
-sigMode   = input.string("Band Reentry", "Signal Mode", options=["Band Reentry", "Band Reversal", "Stochastic", "EMA Cross"], group="PARAMETERS")
-
 // Band settings
 bandType  = input.string("Bollinger", "Band Type", options=["Bollinger", "Keltner"], group="PARAMETERS")
 bandLen   = input.int(20,     "Band Period",     group="PARAMETERS")
 bandMult  = input.float(2.0,  "Band Multiplier", group="PARAMETERS")
 atrLen    = input.int(10,     "ATR Period (Keltner)", group="PARAMETERS")
 
-// Stochastic settings
-stochK    = input.int(14,     "Stoch %K Period", group="PARAMETERS")
-stochD    = input.int(3,      "Stoch %D Smooth", group="PARAMETERS")
-stochOB   = input.int(80,     "Stoch Overbought", group="PARAMETERS")
-stochOS   = input.int(20,     "Stoch Oversold",   group="PARAMETERS")
+// Pivot settings
+pivotLen  = input.int(5,      "Pivot Lookback",  group="PARAMETERS")
 
 // Filter settings
 adxLen    = input.int(14,     "ADX Period",      group="PARAMETERS")
@@ -53,11 +47,6 @@ else
     float dev = bandMult * ta.stdev(close, bandLen)
     bandUp  := bandMid + dev
     bandLo  := bandMid - dev
-
-// Stochastic
-kRaw = ta.stoch(close, high, low, stochK)
-kSmooth = ta.sma(kRaw, stochD)
-dSmooth = ta.sma(kSmooth, stochD)
 
 // ADX / DMI
 [diP, diM, adx] = ta.dmi(adxLen, adxLen)
@@ -143,38 +132,12 @@ if eActive
 bool adxOK     = adx > adxThr
 bool confirmed = barstate.isconfirmed
 
-// Track band excursions (candle must CLOSE beyond band, only when no trade active)
-var bool wasAboveUpper = false
-var bool wasBelowLower = false
+// Pivot / swing detection
+swLo = ta.pivotlow(low, pivotLen, pivotLen)
+swHi = ta.pivothigh(high, pivotLen, pivotLen)
 
-if not eActive
-    if close >= bandUp
-        wasAboveUpper := true
-        wasBelowLower := false
-    if close <= bandLo
-        wasBelowLower := true
-        wasAboveUpper := false
-
-// Raw signal logic (independent of trade state)
-bool rawBuy  = false
-bool rawSell = false
-
-if sigMode == "Band Reversal"
-    rawBuy  := wasBelowLower and ta.crossover(close, bandMid)  and adxOK and confirmed
-    rawSell := wasAboveUpper and ta.crossunder(close, bandMid) and adxOK and confirmed
-    if rawBuy
-        wasBelowLower := false
-    if rawSell
-        wasAboveUpper := false
-else if sigMode == "Stochastic"
-    rawBuy  := ta.crossover(kSmooth, dSmooth)  and kSmooth < stochOB and adxOK and confirmed
-    rawSell := ta.crossunder(kSmooth, dSmooth) and kSmooth > stochOS and adxOK and confirmed
-else if sigMode == "EMA Cross"
-    rawBuy  := ta.crossover(close, bandMid)  and adxOK and confirmed
-    rawSell := ta.crossunder(close, bandMid) and adxOK and confirmed
-else
-    rawBuy  := ta.crossover(close, bandLo)  and adxOK and confirmed
-    rawSell := ta.crossunder(close, bandUp) and adxOK and confirmed
+bool rawBuy  = not na(swLo) and adxOK and confirmed
+bool rawSell = not na(swHi) and adxOK and confirmed
 
 // Trade entry (only when no active trade)
 bool buySignal  = enableEclipse and rawBuy  and not eActive

@@ -17,7 +17,7 @@ sigMode   = input.string("Band Reversal", "Signal Mode", options=["Band Reversal
 
 // Band settings
 bandType  = input.string("Bollinger", "Band Type", options=["Bollinger", "Keltner"], group="PARAMETERS")
-bandLen   = input.int(20,     "Band Period",     group="PARAMETERS")
+bandLen   = input.int(50,     "Band Period",     group="PARAMETERS")
 bandMult  = input.float(2.0,  "Band Multiplier", group="PARAMETERS")
 atrLen    = input.int(10,     "ATR Period (Keltner)", group="PARAMETERS")
 
@@ -143,16 +143,17 @@ if eActive
 bool adxOK     = adx > adxThr
 bool confirmed = barstate.isconfirmed
 
-// Track band excursions (price must visit outer band before signal can fire)
+// Track band excursions (candle must CLOSE beyond band, only when no trade active)
 var bool wasAboveUpper = false
 var bool wasBelowLower = false
 
-if high >= bandUp
-    wasAboveUpper := true
-    wasBelowLower := false
-if low <= bandLo
-    wasBelowLower := true
-    wasAboveUpper := false
+if not eActive
+    if close >= bandUp
+        wasAboveUpper := true
+        wasBelowLower := false
+    if close <= bandLo
+        wasBelowLower := true
+        wasAboveUpper := false
 
 // Raw signal logic (independent of trade state)
 bool rawBuy  = false

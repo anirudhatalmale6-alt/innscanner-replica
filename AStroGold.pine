@@ -13,12 +13,12 @@ eclTP2  = input.int(1000,   "TP2 (pips)",              group="ECLIPSE")
 eclTP3M = input.float(3.0,  "TP3 (Multiplicador)",     group="ECLIPSE")
 
 // Signal mode
-sigMode   = input.string("Stochastic", "Signal Mode", options=["Stochastic", "EMA Cross", "Band Reentry"], group="PARAMETERS")
+sigMode   = input.string("Band Reversal", "Signal Mode", options=["Band Reversal", "Stochastic", "EMA Cross", "Band Reentry"], group="PARAMETERS")
 
 // Band settings
-bandType  = input.string("Keltner", "Band Type", options=["Keltner", "Bollinger"], group="PARAMETERS")
+bandType  = input.string("Bollinger", "Band Type", options=["Bollinger", "Keltner"], group="PARAMETERS")
 bandLen   = input.int(20,     "Band Period",     group="PARAMETERS")
-bandMult  = input.float(1.5,  "Band Multiplier", group="PARAMETERS")
+bandMult  = input.float(2.0,  "Band Multiplier", group="PARAMETERS")
 atrLen    = input.int(10,     "ATR Period (Keltner)", group="PARAMETERS")
 
 // Stochastic settings
@@ -143,11 +143,29 @@ if eActive
 bool adxOK     = adx > adxThr
 bool confirmed = barstate.isconfirmed
 
+// Track band excursions (price must visit outer band before signal can fire)
+var bool wasAboveUpper = false
+var bool wasBelowLower = false
+
+if high >= bandUp
+    wasAboveUpper := true
+    wasBelowLower := false
+if low <= bandLo
+    wasBelowLower := true
+    wasAboveUpper := false
+
 // Raw signal logic (independent of trade state)
 bool rawBuy  = false
 bool rawSell = false
 
-if sigMode == "Stochastic"
+if sigMode == "Band Reversal"
+    rawBuy  := wasBelowLower and ta.crossover(close, bandMid)  and adxOK and confirmed
+    rawSell := wasAboveUpper and ta.crossunder(close, bandMid) and adxOK and confirmed
+    if rawBuy
+        wasBelowLower := false
+    if rawSell
+        wasAboveUpper := false
+else if sigMode == "Stochastic"
     rawBuy  := ta.crossover(kSmooth, dSmooth)  and kSmooth < stochOB and adxOK and confirmed
     rawSell := ta.crossunder(kSmooth, dSmooth) and kSmooth > stochOS and adxOK and confirmed
 else if sigMode == "EMA Cross"

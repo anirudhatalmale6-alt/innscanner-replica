@@ -254,10 +254,10 @@ p3 = plot(showBands ? bandMid : na, "Basis",      color=color.new(color.aqua, 70
 fill(p1, p2, color=showBands ? color.new(color.aqua, 90) : na)
 
 // Signal markers (show all reversal points, colored=trade entry, grey=signal only)
-plotshape(buySignal,                        "Eclipse BUY",      shape.triangleup,   location.belowbar, #FFD700, size=size.small)
-plotshape(sellSignal,                       "Eclipse SELL",     shape.triangledown, location.abovebar, #FF8C00, size=size.small)
-plotshape(rawBuy and not buySignal,         "Eclipse BUY (no trade)",  shape.triangleup,   location.belowbar, color.new(color.gray, 30), size=size.small)
-plotshape(rawSell and not sellSignal,       "Eclipse SELL (no trade)", shape.triangledown, location.abovebar, color.new(color.gray, 30), size=size.small)
+plotshape(buySignal,                        "Eclipse BUY",      shape.triangleup,   location.belowbar, #00E676, size=size.small)
+plotshape(sellSignal,                       "Eclipse SELL",     shape.triangledown, location.abovebar, #E040FB, size=size.small)
+plotshape(rawBuy and not buySignal,         "Eclipse BUY (no trade)",  shape.triangleup,   location.belowbar, color.new(#00E676, 60), size=size.small)
+plotshape(rawSell and not sellSignal,       "Eclipse SELL (no trade)", shape.triangledown, location.abovebar, color.new(#E040FB, 60), size=size.small)
 
 // ═══════════════════════════════════════════════════════════════
 // INFO TABLE (bottom right - strategy panel)

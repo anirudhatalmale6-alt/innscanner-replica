@@ -1,0 +1,286 @@
+//@version=6
+indicator("AStroGold", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+// ═══════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════
+
+enableEclipse = input.bool(true, "Eclipse", group="ESTRATEGIAS")
+
+eclSL   = input.int(700,    "Stop Loss (pips)",       group="ECLIPSE")
+eclTP1  = input.int(500,    "TP1 (pips)",              group="ECLIPSE")
+eclTP2  = input.int(1000,   "TP2 (pips)",              group="ECLIPSE")
+eclTP3M = input.float(3.0,  "TP3 (Multiplicador)",     group="ECLIPSE")
+
+bbLen     = input.int(20,     "BB Period",       group="PARAMETERS")
+bbMult    = input.float(2.0,  "BB Multiplier",   group="PARAMETERS")
+adxLen    = input.int(14,     "ADX Period",      group="PARAMETERS")
+adxThr    = input.float(25.0, "ADX Threshold",   group="PARAMETERS")
+showBands = input.bool(false, "Show Bands",      group="PARAMETERS")
+
+// ═══════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════════
+
+pip = syminfo.mintick * 10
+
+bbBasis = ta.sma(close, bbLen)
+bbDev   = bbMult * ta.stdev(close, bbLen)
+bbUp    = bbBasis + bbDev
+bbLo    = bbBasis - bbDev
+
+[diP, diM, adx] = ta.dmi(adxLen, adxLen)
+bool isBull = diP > diM
+
+// ═══════════════════════════════════════════════════════════════
+// ECLIPSE STATE
+// ═══════════════════════════════════════════════════════════════
+
+var bool  eActive   = false
+var int   eDir      = 0
+var float eEntry    = na
+var float eSL       = na
+var float eTP1      = na
+var float eTP2      = na
+var float eTP3      = na
+var bool  eTP1h     = false
+var bool  eTP2h     = false
+var bool  eTP3h     = false
+var bool  eSLh      = false
+var float eAdxAtEntry = na
+
+var line  lnSL  = na
+var line  lnTP1 = na
+var line  lnTP2 = na
+var line  lnTP3 = na
+var label lbSL  = na
+var label lbTP1 = na
+var label lbTP2 = na
+var label lbTP3 = na
+var label lbEntry = na
+
+// Alert event flags (reset each bar)
+bool evBuy  = false
+bool evSell = false
+bool evTP1  = false
+bool evTP2  = false
+bool evTP3  = false
+bool evSL   = false
+
+// ═══════════════════════════════════════════════════════════════
+// TRADE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+if eActive
+    if eDir == 1
+        if low <= eSL
+            eSLh    := true
+            eActive := false
+            evSL    := true
+        else
+            if not eTP1h and high >= eTP1
+                eTP1h := true
+                evTP1 := true
+            if not eTP2h and high >= eTP2
+                eTP2h := true
+                evTP2 := true
+            if not eTP3h and high >= eTP3
+                eTP3h   := true
+                eActive := false
+                evTP3   := true
+    else if eDir == -1
+        if high >= eSL
+            eSLh    := true
+            eActive := false
+            evSL    := true
+        else
+            if not eTP1h and low <= eTP1
+                eTP1h := true
+                evTP1 := true
+            if not eTP2h and low <= eTP2
+                eTP2h := true
+                evTP2 := true
+            if not eTP3h and low <= eTP3
+                eTP3h   := true
+                eActive := false
+                evTP3   := true
+
+// ═══════════════════════════════════════════════════════════════
+// ENTRY SIGNALS
+// ═══════════════════════════════════════════════════════════════
+
+bool adxOK      = adx > adxThr
+bool buySignal  = enableEclipse and not eActive and low <= bbLo and adxOK
+bool sellSignal = enableEclipse and not eActive and high >= bbUp and adxOK
+
+if buySignal
+    eActive     := true
+    eDir        := 1
+    eEntry      := close
+    eSL         := close - eclSL * pip
+    eTP1        := close + eclTP1 * pip
+    eTP2        := close + eclTP2 * pip
+    eTP3        := close + eclSL * eclTP3M * pip
+    eTP1h       := false
+    eTP2h       := false
+    eTP3h       := false
+    eSLh        := false
+    eAdxAtEntry := adx
+    evBuy       := true
+
+    line.delete(lnSL),  line.delete(lnTP1), line.delete(lnTP2), line.delete(lnTP3)
+    label.delete(lbSL), label.delete(lbTP1), label.delete(lbTP2), label.delete(lbTP3), label.delete(lbEntry)
+
+    lnSL  := line.new(bar_index, eSL,  bar_index + 30, eSL,  color=color.red,  width=1)
+    lnTP1 := line.new(bar_index, eTP1, bar_index + 30, eTP1, color=#4CAF50,    width=1)
+    lnTP2 := line.new(bar_index, eTP2, bar_index + 30, eTP2, color=#00BCD4,    width=1)
+    lnTP3 := line.new(bar_index, eTP3, bar_index + 30, eTP3, color=#2196F3,    width=1)
+
+    lbSL  := label.new(bar_index + 32, eSL,  "SL: " + str.tostring(eSL, format.mintick),   color=color.red,  textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbTP1 := label.new(bar_index + 32, eTP1, "T1: " + str.tostring(eTP1, format.mintick),  color=#4CAF50,    textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbTP2 := label.new(bar_index + 32, eTP2, "T2: " + str.tostring(eTP2, format.mintick),  color=#00BCD4,    textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbTP3 := label.new(bar_index + 32, eTP3, "T3: " + str.tostring(eTP3, format.mintick),  color=#2196F3,    textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbEntry := label.new(bar_index, close, "Eclipse: " + str.tostring(close, format.mintick) + "\nA: " + str.tostring(adx, "#.#"), color=color.new(color.white, 10), textcolor=color.black, style=label.style_label_up, size=size.small)
+
+if sellSignal
+    eActive     := true
+    eDir        := -1
+    eEntry      := close
+    eSL         := close + eclSL * pip
+    eTP1        := close - eclTP1 * pip
+    eTP2        := close - eclTP2 * pip
+    eTP3        := close - eclSL * eclTP3M * pip
+    eTP1h       := false
+    eTP2h       := false
+    eTP3h       := false
+    eSLh        := false
+    eAdxAtEntry := adx
+    evSell      := true
+
+    line.delete(lnSL),  line.delete(lnTP1), line.delete(lnTP2), line.delete(lnTP3)
+    label.delete(lbSL), label.delete(lbTP1), label.delete(lbTP2), label.delete(lbTP3), label.delete(lbEntry)
+
+    lnSL  := line.new(bar_index, eSL,  bar_index + 30, eSL,  color=color.red,  width=1)
+    lnTP1 := line.new(bar_index, eTP1, bar_index + 30, eTP1, color=#4CAF50,    width=1)
+    lnTP2 := line.new(bar_index, eTP2, bar_index + 30, eTP2, color=#00BCD4,    width=1)
+    lnTP3 := line.new(bar_index, eTP3, bar_index + 30, eTP3, color=#2196F3,    width=1)
+
+    lbSL  := label.new(bar_index + 32, eSL,  "SL: " + str.tostring(eSL, format.mintick),   color=color.red,  textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbTP1 := label.new(bar_index + 32, eTP1, "T1: " + str.tostring(eTP1, format.mintick),  color=#4CAF50,    textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbTP2 := label.new(bar_index + 32, eTP2, "T2: " + str.tostring(eTP2, format.mintick),  color=#00BCD4,    textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbTP3 := label.new(bar_index + 32, eTP3, "T3: " + str.tostring(eTP3, format.mintick),  color=#2196F3,    textcolor=color.white, style=label.style_label_left, size=size.small)
+    lbEntry := label.new(bar_index, close, "Eclipse: " + str.tostring(close, format.mintick) + "\nA: " + str.tostring(adx, "#.#"), color=color.new(color.white, 10), textcolor=color.black, style=label.style_label_down, size=size.small)
+
+// Extend lines while trade is active
+if eActive and not na(lnSL)
+    int ext = bar_index + 20
+    line.set_x2(lnSL, ext),  line.set_x2(lnTP1, ext), line.set_x2(lnTP2, ext), line.set_x2(lnTP3, ext)
+    label.set_x(lbSL, ext + 2), label.set_x(lbTP1, ext + 2), label.set_x(lbTP2, ext + 2), label.set_x(lbTP3, ext + 2)
+
+// ═══════════════════════════════════════════════════════════════
+// BAND PLOTS
+// ═══════════════════════════════════════════════════════════════
+
+p1 = plot(showBands ? bbUp    : na, "Upper Band", color=color.new(color.aqua, 50))
+p2 = plot(showBands ? bbLo    : na, "Lower Band", color=color.new(color.aqua, 50))
+p3 = plot(showBands ? bbBasis : na, "Basis",      color=color.new(color.aqua, 70))
+fill(p1, p2, color=showBands ? color.new(color.aqua, 90) : na)
+
+// Signal markers
+plotshape(buySignal,  "Eclipse BUY",  shape.triangleup,   location.belowbar, #FFD700, size=size.small)
+plotshape(sellSignal, "Eclipse SELL", shape.triangledown, location.abovebar, #FF8C00, size=size.small)
+
+// ═══════════════════════════════════════════════════════════════
+// INFO TABLE (bottom right - strategy panel)
+// ═══════════════════════════════════════════════════════════════
+
+var table tbl = table.new(position.bottom_right, 2, 8, bgcolor=color.new(#1a1a2e, 0), border_width=1, border_color=color.new(#333366, 0))
+
+string statusTxt = "---"
+color  statusBg  = color.gray
+
+if eActive
+    if eTP2h
+        statusTxt := "TP2 ✓"
+        statusBg  := #4CAF50
+    else if eTP1h
+        statusTxt := "TP1 ✓"
+        statusBg  := #4CAF50
+    else
+        statusTxt := "ACTIVA"
+        statusBg  := #FFC107
+else if not na(eEntry)
+    if eSLh
+        statusTxt := "SL ✗"
+        statusBg  := #F44336
+    else if eTP3h
+        statusTxt := "TP3 ✓"
+        statusBg  := #4CAF50
+    else if eTP2h
+        statusTxt := "TP2 ✓"
+        statusBg  := #4CAF50
+
+string typeTxt = eDir == 1 ? "BUY ↑" : eDir == -1 ? "SELL ↓" : "---"
+color  typeBg  = eDir == 1 ? #4CAF50 : eDir == -1 ? #F44336 : color.gray
+
+string tp1Txt = na(eTP1) ? "---" : str.tostring(eTP1, format.mintick) + (eTP1h ? " ✓" : "")
+string tp2Txt = na(eTP2) ? "---" : str.tostring(eTP2, format.mintick) + (eTP2h ? " ✓" : "")
+string tp3Txt = na(eTP3) ? "---" : str.tostring(eTP3, format.mintick) + (eTP3h ? " ✓" : "")
+string slTxt  = na(eSL)  ? "---" : str.tostring(eSL, format.mintick)
+
+if barstate.islast
+    table.cell(tbl, 0, 0, "ECLIPSE", text_color=color.white, text_size=size.small, bgcolor=#1565C0)
+    table.cell(tbl, 1, 0, "",        text_color=color.white, text_size=size.small, bgcolor=#1565C0)
+
+    table.cell(tbl, 0, 1, "Tipo",    text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 1, typeTxt,   text_color=color.white, text_size=size.small, bgcolor=typeBg)
+
+    table.cell(tbl, 0, 2, "Entrada", text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 2, na(eEntry) ? "---" : str.tostring(eEntry, format.mintick), text_color=#FFC107, text_size=size.small, bgcolor=#1a1a2e)
+
+    table.cell(tbl, 0, 3, "TP1",     text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 3, tp1Txt,    text_color=eTP1h ? #4CAF50 : color.white, text_size=size.small, bgcolor=#1a1a2e)
+
+    table.cell(tbl, 0, 4, "TP2",     text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 4, tp2Txt,    text_color=eTP2h ? #4CAF50 : color.white, text_size=size.small, bgcolor=#1a1a2e)
+
+    table.cell(tbl, 0, 5, "TP3",     text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 5, tp3Txt,    text_color=eTP3h ? #4CAF50 : color.white, text_size=size.small, bgcolor=#1a1a2e)
+
+    table.cell(tbl, 0, 6, "SL",      text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 6, slTxt,     text_color=color.white, text_size=size.small, bgcolor=#F44336)
+
+    table.cell(tbl, 0, 7, "STATUS",  text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(tbl, 1, 7, statusTxt, text_color=color.white, text_size=size.small, bgcolor=statusBg)
+
+// ═══════════════════════════════════════════════════════════════
+// TOP-RIGHT INFO PANEL
+// ═══════════════════════════════════════════════════════════════
+
+var table infoPanel = table.new(position.top_right, 2, 3, bgcolor=color.new(#1a1a2e, 0), border_width=1, border_color=color.new(#333366, 0))
+
+string trendTxt = isBull ? "Alcista ↑" : "Bajista ↓"
+color  trendClr = isBull ? #4CAF50 : #F44336
+string filterTxt = str.tostring(adx, "#.#") + (adxOK ? " ✓" : " ✗")
+color  filterClr = adxOK ? #4CAF50 : #F44336
+
+if barstate.islast
+    table.cell(infoPanel, 0, 0, "Tendencia", text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(infoPanel, 1, 0, trendTxt,    text_color=trendClr, text_size=size.small, bgcolor=#1a1a2e)
+
+    table.cell(infoPanel, 0, 1, "Precio",    text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(infoPanel, 1, 1, str.tostring(close, format.mintick), text_color=color.white, text_size=size.small, bgcolor=#1a1a2e)
+
+    table.cell(infoPanel, 0, 2, "Filter",    text_color=#9E9E9E, text_size=size.small, bgcolor=#1a1a2e)
+    table.cell(infoPanel, 1, 2, filterTxt,   text_color=filterClr, text_size=size.small, bgcolor=#1a1a2e)
+
+// ═══════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════
+
+alertcondition(evBuy,  "Eclipse BUY",  "AStroGold Eclipse BUY at {{close}} | SL: " + str.tostring(eSL) + " | TP1: " + str.tostring(eTP1) + " | TP2: " + str.tostring(eTP2) + " | TP3: " + str.tostring(eTP3))
+alertcondition(evSell, "Eclipse SELL", "AStroGold Eclipse SELL at {{close}} | SL: " + str.tostring(eSL) + " | TP1: " + str.tostring(eTP1) + " | TP2: " + str.tostring(eTP2) + " | TP3: " + str.tostring(eTP3))
+alertcondition(evTP1,  "Eclipse TP1",  "AStroGold Eclipse TP1 hit")
+alertcondition(evTP2,  "Eclipse TP2",  "AStroGold Eclipse TP2 hit")
+alertcondition(evTP3,  "Eclipse TP3",  "AStroGold Eclipse TP3 hit — trade complete")
+alertcondition(evSL,   "Eclipse SL",   "AStroGold Eclipse SL hit — trade closed")

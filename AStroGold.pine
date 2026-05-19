@@ -122,8 +122,9 @@ if eActive
 // ═══════════════════════════════════════════════════════════════
 
 bool adxOK      = adx > adxThr
-bool buySignal  = enableEclipse and not eActive and ta.crossover(close, bandLo) and adxOK
-bool sellSignal = enableEclipse and not eActive and ta.crossunder(close, bandUp) and adxOK
+bool confirmed  = barstate.isconfirmed
+bool buySignal  = enableEclipse and not eActive and ta.crossover(close, bandLo) and adxOK and confirmed
+bool sellSignal = enableEclipse and not eActive and ta.crossunder(close, bandUp) and adxOK and confirmed
 
 if buySignal
     eActive     := true

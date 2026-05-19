@@ -18,7 +18,7 @@ sigMode   = input.string("Band Reentry", "Signal Mode", options=["Band Reentry",
 // Band settings
 bandType  = input.string("Bollinger", "Band Type", options=["Bollinger", "Keltner"], group="PARAMETERS")
 bandLen   = input.int(20,     "Band Period",     group="PARAMETERS")
-bandMult  = input.float(1.0,  "Band Multiplier", group="PARAMETERS")
+bandMult  = input.float(2.0,  "Band Multiplier", group="PARAMETERS")
 atrLen    = input.int(10,     "ATR Period (Keltner)", group="PARAMETERS")
 
 // Stochastic settings

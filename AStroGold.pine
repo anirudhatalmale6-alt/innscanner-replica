@@ -136,8 +136,14 @@ bool confirmed = barstate.isconfirmed
 swLo = ta.pivotlow(low, pivotLen, pivotLen)
 swHi = ta.pivothigh(high, pivotLen, pivotLen)
 
-bool rawBuy  = not na(swLo) and adxOK and confirmed
-bool rawSell = not na(swHi) and adxOK and confirmed
+// Band proximity: swing must be in the outer band zone
+// BUY: swing low must be at or below SMA-1σ (midpoint between midline and lower band)
+// SELL: swing high must be at or above SMA+1σ (midpoint between midline and upper band)
+float buyZone  = (bandMid[pivotLen] + bandLo[pivotLen]) / 2
+float sellZone = (bandMid[pivotLen] + bandUp[pivotLen]) / 2
+
+bool rawBuy  = not na(swLo) and swLo <= buyZone  and adxOK and confirmed
+bool rawSell = not na(swHi) and swHi >= sellZone and adxOK and confirmed
 
 // Trade entry (only when no active trade)
 bool buySignal  = enableEclipse and rawBuy  and not eActive

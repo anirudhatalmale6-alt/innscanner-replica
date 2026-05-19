@@ -12,8 +12,10 @@ eclTP1  = input.int(500,    "TP1 (pips)",              group="ECLIPSE")
 eclTP2  = input.int(1000,   "TP2 (pips)",              group="ECLIPSE")
 eclTP3M = input.float(3.0,  "TP3 (Multiplicador)",     group="ECLIPSE")
 
-bbLen     = input.int(20,     "BB Period",       group="PARAMETERS")
-bbMult    = input.float(2.0,  "BB Multiplier",   group="PARAMETERS")
+bandType  = input.string("Keltner", "Band Type", options=["Keltner", "Bollinger"], group="PARAMETERS")
+bandLen   = input.int(20,     "Band Period",     group="PARAMETERS")
+bandMult  = input.float(1.5,  "Band Multiplier", group="PARAMETERS")
+atrLen    = input.int(10,     "ATR Period (Keltner)", group="PARAMETERS")
 adxLen    = input.int(14,     "ADX Period",      group="PARAMETERS")
 adxThr    = input.float(25.0, "ADX Threshold",   group="PARAMETERS")
 showBands = input.bool(false, "Show Bands",      group="PARAMETERS")
@@ -24,10 +26,20 @@ showBands = input.bool(false, "Show Bands",      group="PARAMETERS")
 
 pip = syminfo.mintick * 10
 
-bbBasis = ta.sma(close, bbLen)
-bbDev   = bbMult * ta.stdev(close, bbLen)
-bbUp    = bbBasis + bbDev
-bbLo    = bbBasis - bbDev
+float bandMid = na
+float bandUp  = na
+float bandLo  = na
+
+if bandType == "Keltner"
+    bandMid := ta.ema(close, bandLen)
+    float atrVal = ta.atr(atrLen)
+    bandUp  := bandMid + bandMult * atrVal
+    bandLo  := bandMid - bandMult * atrVal
+else
+    bandMid := ta.sma(close, bandLen)
+    float dev = bandMult * ta.stdev(close, bandLen)
+    bandUp  := bandMid + dev
+    bandLo  := bandMid - dev
 
 [diP, diM, adx] = ta.dmi(adxLen, adxLen)
 bool isBull = diP > diM
@@ -110,8 +122,8 @@ if eActive
 // ═══════════════════════════════════════════════════════════════
 
 bool adxOK      = adx > adxThr
-bool buySignal  = enableEclipse and not eActive and low <= bbLo and adxOK
-bool sellSignal = enableEclipse and not eActive and high >= bbUp and adxOK
+bool buySignal  = enableEclipse and not eActive and ta.crossover(close, bandLo) and adxOK
+bool sellSignal = enableEclipse and not eActive and ta.crossunder(close, bandUp) and adxOK
 
 if buySignal
     eActive     := true
@@ -181,9 +193,9 @@ if eActive and not na(lnSL)
 // BAND PLOTS
 // ═══════════════════════════════════════════════════════════════
 
-p1 = plot(showBands ? bbUp    : na, "Upper Band", color=color.new(color.aqua, 50))
-p2 = plot(showBands ? bbLo    : na, "Lower Band", color=color.new(color.aqua, 50))
-p3 = plot(showBands ? bbBasis : na, "Basis",      color=color.new(color.aqua, 70))
+p1 = plot(showBands ? bandUp  : na, "Upper Band", color=color.new(color.aqua, 50))
+p2 = plot(showBands ? bandLo  : na, "Lower Band", color=color.new(color.aqua, 50))
+p3 = plot(showBands ? bandMid : na, "Basis",      color=color.new(color.aqua, 70))
 fill(p1, p2, color=showBands ? color.new(color.aqua, 90) : na)
 
 // Signal markers

@@ -278,9 +278,15 @@ if barstate.islast
 // ALERTS
 // ═══════════════════════════════════════════════════════════════
 
-alertcondition(evBuy,  "Eclipse BUY",  "AStroGold Eclipse BUY at {{close}}")
-alertcondition(evSell, "Eclipse SELL", "AStroGold Eclipse SELL at {{close}}")
-alertcondition(evTP1,  "Eclipse TP1",  "AStroGold Eclipse TP1 hit")
-alertcondition(evTP2,  "Eclipse TP2",  "AStroGold Eclipse TP2 hit")
-alertcondition(evTP3,  "Eclipse TP3",  "AStroGold Eclipse TP3 hit — trade complete")
-alertcondition(evSL,   "Eclipse SL",   "AStroGold Eclipse SL hit — trade closed")
+if evBuy
+    alert("AStroGold Eclipse BUY at " + str.tostring(close, format.mintick) + " | SL: " + str.tostring(eSL, format.mintick) + " | TP1: " + str.tostring(eTP1, format.mintick) + " | TP2: " + str.tostring(eTP2, format.mintick) + " | TP3: " + str.tostring(eTP3, format.mintick), alert.freq_once_per_bar)
+if evSell
+    alert("AStroGold Eclipse SELL at " + str.tostring(close, format.mintick) + " | SL: " + str.tostring(eSL, format.mintick) + " | TP1: " + str.tostring(eTP1, format.mintick) + " | TP2: " + str.tostring(eTP2, format.mintick) + " | TP3: " + str.tostring(eTP3, format.mintick), alert.freq_once_per_bar)
+if evTP1
+    alert("AStroGold Eclipse TP1 hit", alert.freq_once_per_bar)
+if evTP2
+    alert("AStroGold Eclipse TP2 hit", alert.freq_once_per_bar)
+if evTP3
+    alert("AStroGold Eclipse TP3 hit - trade complete", alert.freq_once_per_bar)
+if evSL
+    alert("AStroGold Eclipse SL hit - trade closed", alert.freq_once_per_bar)
